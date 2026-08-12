@@ -20,8 +20,12 @@ Entwickler die Schule verlassen haben. Dazu ein Bestand-Katalog-Editor
 - **Phase 2** — Tab Barcode-Scanner: clone/update/start/stop (zwei Subprozesse:
   Node-Server + Python-Client) + QR-View (grafisch via `qrcode[pil]` aus der
   geparsten Scanner-URL, ASCII-QR zusätzlich im Log) + portables Node-Bootstrap
-  (LTS v22.23.2, Download+Entpacken bei Bedarf). 92 Unit-Tests grün.
-- Bestand-Katalog-Editor + Hilfe/Polish folgen in den Phasen 3–5
+  (LTS v22.23.2, Download+Entpacken bei Bedarf).
+- **Phase 3** — Tab Bestand MVP: Excel auswählen, Dry-run/echter Lauf (mit
+  Bestätigung), `safety_stock` + `match_overrides` als Roh-Editor, Report im
+  Log-View. `core/bestand.py` shellt `update_bestand_auto.py` im eigenen
+  `.venv-bestand` (GET-only); `install` klont nur `ausleihe-api`. 135 Unit-Tests grün.
+- Katalog-Voll-Editor + Hilfe/Polish folgen in den Phasen 4–5
   (siehe Plan `~/.claude/plans/scalable-watching-starlight.md`).
 
 ## Architektur

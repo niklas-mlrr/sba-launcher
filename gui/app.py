@@ -15,19 +15,14 @@ import tkinter as tk
 from tkinter import ttk
 
 from core import prereqs
-from gui import tab_ausleihe, tab_barcode
+from gui import tab_ausleihe, tab_barcode, tab_bestand
 
-# Tab-Titel. Tab 1 (ausleihe) und Tab 3 (barcode) sind voll angebunden
-# (Phase 1 + 2); die restlichen bleiben Platzhalter bis Phase 3–5.
+# Tab-Titel. Tab 1 (ausleihe), 2 (bestand) und 3 (barcode) sind voll angebunden
+# (Phase 1 + 2 + 3); der Hilfe-Tab bleibt Platzhalter bis Phase 5.
 # ``render`` baut den Frame-Inhalt.
 TABS: list[tuple[str, str]] = [
     ("Ausleihe-Ausgabe", "ausleihe"),
-    (
-        "Bestand",
-        "Bestands- und Nachbestellungs-Excel aktualisieren (IServ read-only, GET).\n"
-        "Katalog-Editor: Fach × Jahrgang → ISBN, Mehrjahresband. Dry-run/echter Lauf.\n"
-        "(Phase 3–4)",
-    ),
+    ("Bestand", "bestand"),
     ("Barcode-Scanner", "barcode"),
     (
         "Hilfe",
@@ -72,6 +67,9 @@ def build_app(root: tk.Tk) -> ttk.Notebook:
         if key == "ausleihe":
             # Phase 1: voll angebundener Tab (Logik in core.ausleihe_ausgabe).
             tab_ausleihe.build(frame)
+        elif key == "bestand":
+            # Phase 3: Bestand-Excel (Logik in core.bestand + core.config_io).
+            tab_bestand.build(frame)
         elif key == "barcode":
             # Phase 2: Barcode-Scanner (Logik in core.barcode, zwei Subprozesse).
             tab_barcode.build(frame)
@@ -82,7 +80,7 @@ def build_app(root: tk.Tk) -> ttk.Notebook:
     bar = ttk.Frame(root)
     bar.pack(fill="x", padx=8, pady=4)
     ttk.Label(bar, text=build_status_line()).pack(side="left")
-    ttk.Label(bar, text="Phase 2 — Tab Barcode", foreground="#888").pack(
+    ttk.Label(bar, text="Phase 3 — Tab Bestand", foreground="#888").pack(
         side="right"
     )
 
