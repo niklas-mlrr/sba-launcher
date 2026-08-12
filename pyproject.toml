@@ -6,6 +6,11 @@ requires-python = ">=3.12"
 dependencies = [
     # QR-View für den Barcode-Tab (gleicher Ansatz wie ausleihe-ausgabe).
     "qrcode[pil]>=8.0",
+    # Katalog-Editor (Phase 4): Excel-IO + ISBN-Maskierung. Beide auch im
+    # Bestand-Extra des Schwesterprojekts — hier als Launcher-Dep, damit
+    # ``core/catalog`` auf dem headless VPS via pytest testbar ist.
+    "openpyxl>=3.1",
+    "isbnlib>=3.7",
     # tkinter ist stdlib und wird NICHT als dep gelistet (System-Python/Tk-Bundles
     # auf Windows; auf dem headless VPS fehlt Tk bewusst — core/ bleibt tk-frei).
 ]

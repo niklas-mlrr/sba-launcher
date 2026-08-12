@@ -1,20 +1,27 @@
-"""Tab: Bestand (dünn — alle Logik in ``core.bestand`` + ``core.config_io``).
+"""Tab: Bestand (dünn — alle Logik in ``core.bestand`` + ``core.config_io`` +
+``core.catalog``).
 
-Phase-3-MVP: Excel auswählen → dry-run/echter Lauf (mit Bestätigung) → Report
-im LogView. Config-Roh-Editor für ``safety_stock`` + ``match_overrides``
-(JSON-Text); speichert über ``config_io.write_editable`` und erhält alle anderen
-Keys (``excel_file``, ``sheet_name``, ``mappings``). Der Voll-Katalog-Editor
-(Fach × Jahrgang) folgt in Phase 4.
+Phase 3: Excel auswählen → dry-run/echter Lauf (mit Bestätigung) → Report im
+LogView. Config-Roh-Editor für ``safety_stock`` + ``match_overrides`` (JSON-Text);
+speichert über ``config_io.write_editable`` und erhält alle anderen Keys
+(``excel_file``, ``sheet_name``, ``mappings``).
+
+Phase 4 — Voll-Katalog-Editor: ``ttk.Treeview`` (Fach × Jahrgang → ISBN,
+Mehrjahresband, Titel/Verlag/Neupreis) mit Hinzufügen/Entfernen/Bearbeiten,
+Import aus Excel, Excel aus Vorlage (Mappings-only) und Override-Sync aus dem
+Katalog. Der Roh-Editor bleibt als „Erweitert"-Fallback darunter.
 
 Dünne GUI-Regel: Install/Update/Run laufen in Hintergrund-Threads; deren
 ``log``-Callback hängt Zeilen thread-safe via ``after(0, …)`` ins LogView.
 Bestand ist ein Ein-Schuss-Skript (kein dauerhafter Subprocess) — im Gegensatz
-zum Barcode-Tab gibt es hier keinen ``SubprocessManager``-Poll-Loop.
+zum Barcode-Tab gibt es hier keinen ``SubprocessManager``-Poll-Loop. Katalog-
+Aktionen sind lokale Datei-IO (kein IServ-Kontakt) und laufen direkt im Thread.
 
 Produktionsschutz: ``run_auto`` ist reiner GET-Pfad (schreibt nur in die Excel,
 nie nach IServ). Ein echter Lauf (ohne ``--dry-run``) verlangt eine explizite
 Bestätigung (``messagebox.askyesno``) — die Excel wird überschrieben (mit
-Backup). ``ALLOW_BOOKING``/API-Writes werden nicht angeboten.
+Backup). ``ALLOW_BOOKING``/API-Writes werden nicht angeboten. Der Katalog-Editor
+ist rein lokale Excel-/JSON-IO.
 """
 
 from __future__ import annotations
@@ -25,11 +32,25 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from core import bestand as bst
-from core import config_io, gitops
+from core import catalog, config_io, gitops
 from gui.widgets import LogView
 
 # Fenster-Titel für filedialog (Windows-orientiert, spielt auf POSIX keine Rolle).
 _EXCEL_FILETYPES = [("Excel-Dateien", "*.xlsx"), ("Alle Dateien", "*.*")]
+
+# Treeview-Spalten (id wird als iid genutzt, nicht als Anzeigespalte).
+_KAT_COLUMNS = ("fach", "hint", "von", "bis", "isbn", "titel", "verlag", "neupreis", "mjb")
+_KAT_HEADERS = {
+    "fach": "Fach",
+    "hint": "Hint",
+    "von": "Von",
+    "bis": "Bis",
+    "isbn": "ISBN",
+    "titel": "Titel",
+    "verlag": "Verlag",
+    "neupreis": "Neupreis",
+    "mjb": "MJB",
+}
 
 
 class BestandTab(ttk.Frame):
@@ -39,8 +60,10 @@ class BestandTab(ttk.Frame):
         super().__init__(parent, **kw)
         self._busy = False
         self._excel_path: Path | None = None
+        self._katalog: catalog.Katalog = catalog.Katalog(schule="", schuljahr="")
         self._build()
         self._load_config_into_form()
+        self._load_katalog()
         self._refresh_status()
 
     # --- Aufbau ------------------------------------------------------------
@@ -72,12 +95,52 @@ class BestandTab(ttk.Frame):
         self._btn_pick = ttk.Button(excel_row, text="…", width=3, command=self.on_pick_excel)
         self._btn_pick.pack(side="left")
 
-        # Mittelteil: links Config-Editor + Report, daneben Schuljahr.
+        # Mittelteil: Katalog-Editor (oben), Config-Roh-Editor (Erweitert),
+        # Schuljahr, Report-Log (unten).
         mid = ttk.Frame(self)
         mid.pack(fill="both", expand=True, padx=12, pady=4)
 
-        # Config-Roh-Editor (links, oberer Bereich).
-        cfg = ttk.LabelFrame(mid, text="Config (Roh-Editor)")
+        # ── Katalog-Editor (Treeview) ──────────────────────────────────────
+        kat = ttk.LabelFrame(mid, text="Katalog (Fach × Jahrgang → ISBN)")
+        kat.pack(fill="both", expand=True, pady=(0, 4))
+
+        tree_row = ttk.Frame(kat)
+        tree_row.pack(fill="both", expand=True, padx=8, pady=(8, 2))
+        self._tree = ttk.Treeview(
+            tree_row, columns=_KAT_COLUMNS, show="headings", height=9
+        )
+        for col in _KAT_COLUMNS:
+            self._tree.heading(col, text=_KAT_HEADERS[col])
+            self._tree.column(col, width=90, stretch=True)
+        self._tree.column("fach", width=120, stretch=False)
+        self._tree.column("titel", width=220, stretch=True)
+        self._tree.column("isbn", width=130, stretch=False)
+        self._tree.column("hint", width=70, stretch=False)
+        self._tree.column("von", width=40, stretch=False)
+        self._tree.column("bis", width=40, stretch=False)
+        self._tree.column("mjb", width=40, stretch=False)
+        tree_scroll = ttk.Scrollbar(tree_row, command=self._tree.yview)
+        self._tree.configure(yscrollcommand=tree_scroll.set)
+        self._tree.pack(side="left", fill="both", expand=True)
+        tree_scroll.pack(side="right", fill="y")
+        self._tree.bind("<Double-1>", lambda _e: self.on_katalog_edit())
+
+        kat_btns = ttk.Frame(kat)
+        kat_btns.pack(fill="x", padx=8, pady=(2, 8))
+        for text, cmd in [
+            ("Aus Excel importieren", self.on_katalog_import),
+            ("Excel aus Vorlage", self.on_katalog_render),
+            ("Overrides synchronisieren", self.on_katalog_sync),
+            ("Hinzufügen", self.on_katalog_add),
+            ("Bearbeiten", self.on_katalog_edit),
+            ("Entfernen", self.on_katalog_remove),
+            ("Katalog speichern", self.on_katalog_save),
+            ("Neu laden", self.on_katalog_reload),
+        ]:
+            ttk.Button(kat_btns, text=text, command=cmd).pack(side="left", padx=(0, 4))
+
+        # Config-Roh-Editor („Erweitert"-Fallback).
+        cfg = ttk.LabelFrame(mid, text="Config (Roh-Editor / Erweitert)")
         cfg.pack(fill="x", pady=(0, 4))
 
         ss_row = ttk.Frame(cfg)
@@ -161,6 +224,234 @@ class BestandTab(ttk.Frame):
             messagebox.showerror("Config", f"Speichern fehlgeschlagen: {e}")
             return
         self._log.append(f"[Config] gespeichert: {path}")
+
+    # --- Katalog-Editor -----------------------------------------------------
+
+    def _load_katalog(self) -> None:
+        """Lädt ``data/katalog.json`` (leer bei Fehlen) und befüllt den Treeview."""
+        try:
+            self._katalog = catalog.load_katalog()
+        except Exception as e:  # noqa: BLE001 — kaputte JSON soll GUI nicht crashen
+            self._log.append(f"[Katalog] Lesen fehlgeschlagen: {e}")
+            self._katalog = catalog.Katalog(schule="", schuljahr="")
+        self._populate_tree()
+
+    def _populate_tree(self) -> None:
+        """Zeigt ``self._katalog`` im Treeview (sortiert wie der Katalog)."""
+        self._tree.delete(*self._tree.get_children())
+        for e in self._katalog.eintraege:
+            self._tree.insert(
+                "",
+                "end",
+                iid=e.id,
+                values=(
+                    e.fach,
+                    e.hint or "",
+                    e.jahrgang_von,
+                    e.jahrgang_bis,
+                    e.isbn,
+                    e.titel,
+                    e.verlag,
+                    f"{e.neupreis:.2f}" if e.neupreis else "",
+                    "✓" if e.mehrjahresband else "",
+                ),
+            )
+
+    def on_katalog_reload(self) -> None:
+        self._load_katalog()
+        self._log.append("[Katalog] neu geladen.")
+
+    def on_katalog_save(self) -> None:
+        """Schreibt den In-Memory-Katalog nach ``data/katalog.json``."""
+        try:
+            path = catalog.save_katalog(self._katalog)
+        except Exception as e:  # noqa: BLE001
+            messagebox.showerror("Katalog", f"Speichern fehlgeschlagen: {e}")
+            return
+        self._log.append(f"[Katalog] gespeichert: {path} ({len(self._katalog.eintraege)} Einträge)")
+
+    def on_katalog_import(self) -> None:
+        """Importiert eine Bestand-Excel (+ mappings aus config.json) in den Katalog."""
+        path = filedialog.askopenfilename(
+            title="Bestand-Excel zum Import wählen", filetypes=_EXCEL_FILETYPES
+        )
+        if not path:
+            return
+
+        def log(line: str) -> None:
+            self.after(0, lambda: self._log.append(line))
+
+        def worker() -> None:
+            try:
+                cfg = config_io.read_config()
+                mappings = cfg.mappings if isinstance(cfg.mappings, list) else []
+                kat = catalog.import_from_excel(
+                    Path(path), mappings, sheet_name=cfg.sheet_name,
+                    schule=self._katalog.schule, schuljahr=self._katalog.schuljahr,
+                )
+                self._katalog = kat
+                self.after(0, self._populate_tree)
+                log(f"[Katalog] Import fertig: {len(kat.eintraege)} Einträge aus {path}")
+            except Exception as e:  # noqa: BLE001
+                log(f"[Katalog] Import fehlgeschlagen: {e}")
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def on_katalog_render(self) -> None:
+        """Erzeugt eine Excel-Datei aus Vorlage + Katalog (Mappings-only)."""
+        template = filedialog.askopenfilename(
+            title="Vorlage (.xlsx) wählen", filetypes=_EXCEL_FILETYPES
+        )
+        if not template:
+            return
+        out = filedialog.asksaveasfilename(
+            title="Ausgabe-Excel speichern unter",
+            defaultextension=".xlsx",
+            filetypes=_EXCEL_FILETYPES,
+        )
+        if not out:
+            return
+
+        def log(line: str) -> None:
+            self.after(0, lambda: self._log.append(line))
+
+        def worker() -> None:
+            try:
+                cfg_path, unmatched = catalog.render_excel(
+                    Path(template), self._katalog, Path(out)
+                )
+                log(f"[Katalog] Excel aus Vorlage: {out}")
+                log(f"[Katalog] config.json geschrieben: {cfg_path}")
+                if unmatched:
+                    log(f"[Katalog] {len(unmatched)} Eintrag/Einträge ohne Layout-Slot:")
+                    for u in unmatched:
+                        log(f"    - {u}")
+                else:
+                    log("[Katalog] alle Einträge zugeordnet.")
+            except Exception as e:  # noqa: BLE001
+                log(f"[Katalog] Excel-aus-Vorlage fehlgeschlagen: {e}")
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def on_katalog_sync(self) -> None:
+        """Schreibt ``match_overrides`` aus dem Katalog in die config.json."""
+        try:
+            overrides = catalog.catalog_to_overrides(self._katalog)
+            safety = config_io.read_config().safety_stock
+            path = config_io.write_editable(safety, overrides)
+        except Exception as e:  # noqa: BLE001
+            messagebox.showerror("Overrides", f"Synchronisieren fehlgeschlagen: {e}")
+            return
+        self._load_config_into_form()
+        self._log.append(
+            f"[Katalog] {len(overrides)} Overrides synchronisiert nach {path}"
+        )
+
+    def on_katalog_add(self) -> None:
+        eintrag = self._edit_dialog()
+        if eintrag is None:
+            return
+        self._katalog.eintraege.append(eintrag)
+        self._populate_tree()
+        self._log.append(
+            f"[Katalog] hinzugefügt: {eintrag.fach} "
+            f"Jg.{eintrag.jahrgang_von}-{eintrag.jahrgang_bis}"
+        )
+
+    def on_katalog_edit(self) -> None:
+        sel = self._tree.selection()
+        if not sel:
+            return
+        eid = sel[0]
+        eintrag = next((e for e in self._katalog.eintraege if e.id == eid), None)
+        if eintrag is None:
+            return
+        updated = self._edit_dialog(eintrag)
+        if updated is None:
+            return
+        # Eintrag ersetzen (gleiche ID, falls Identität unverändert).
+        idx = self._katalog.eintraege.index(eintrag)
+        self._katalog.eintraege[idx] = updated
+        self._populate_tree()
+        self._log.append(
+            f"[Katalog] bearbeitet: {updated.fach} Jg.{updated.jahrgang_von}-{updated.jahrgang_bis}"
+        )
+
+    def on_katalog_remove(self) -> None:
+        sel = self._tree.selection()
+        if not sel:
+            return
+        eid = sel[0]
+        self._katalog.eintraege = [e for e in self._katalog.eintraege if e.id != eid]
+        self._populate_tree()
+        self._log.append("[Katalog] Eintrag entfernt (Katalog speichern nicht vergessen).")
+
+    def _edit_dialog(self, eintrag: catalog.Eintrag | None = None) -> catalog.Eintrag | None:
+        """Modal-Dialog zum Anlegen/Bearbeiten eines Eintrags; None bei Abbruch."""
+        dlg = tk.Toplevel(self)
+        dlg.title("Eintrag bearbeiten" if eintrag else "Eintrag hinzufügen")
+        dlg.transient(self)
+        dlg.grab_set()
+        dlg.resizable(True, True)
+
+        fields: dict[str, tk.StringVar] = {}
+        e = eintrag or catalog.Eintrag(fach="", jahrgang_von=5, jahrgang_bis=5, isbn="")
+        defaults = {
+            "Fach": e.fach,
+            "Hint": e.hint or "",
+            "Von": str(e.jahrgang_von),
+            "Bis": str(e.jahrgang_bis),
+            "ISBN": e.isbn,
+            "Titel": e.titel,
+            "Verlag": e.verlag,
+            "Neupreis": f"{e.neupreis:.2f}" if e.neupreis else "",
+        }
+        _keys = ["Fach", "Hint", "Von", "Bis", "ISBN", "Titel", "Verlag", "Neupreis"]
+        for i, key in enumerate(_keys):
+            ttk.Label(dlg, text=key + ":", width=10, anchor="w").grid(
+                row=i, column=0, sticky="w", padx=8, pady=2
+            )
+            var = tk.StringVar(value=defaults[key])
+            ttk.Entry(dlg, textvariable=var, width=40).grid(row=i, column=1, padx=8, pady=2)
+            fields[key] = var
+
+        result: dict[str, object] = {"eintrag": None}
+
+        def on_ok() -> None:
+            try:
+                von = int(fields["Von"].get().strip())
+                bis = int(fields["Bis"].get().strip())
+            except ValueError:
+                messagebox.showerror("Eingabe", "Von/Bis müssen ganze Zahlen sein.", parent=dlg)
+                return
+            try:
+                preis = float(fields["Neupreis"].get().strip() or "0")
+            except ValueError:
+                messagebox.showerror("Eingabe", "Neupreis muss eine Zahl sein.", parent=dlg)
+                return
+            hint = fields["Hint"].get().strip() or None
+            new = catalog.Eintrag(
+                fach=fields["Fach"].get().strip(),
+                jahrgang_von=von,
+                jahrgang_bis=bis,
+                isbn=fields["ISBN"].get().strip(),
+                hint=hint,
+                titel=fields["Titel"].get().strip(),
+                verlag=fields["Verlag"].get().strip(),
+                neupreis=preis,
+                # ID aus der (ggf. neuen) Identität berechnen lassen — invariant.
+                id="",
+            )
+            result["eintrag"] = new
+            dlg.destroy()
+
+        btns = ttk.Frame(dlg)
+        btns.grid(row=len(fields), column=0, columnspan=2, pady=(8, 8))
+        ttk.Button(btns, text="OK", command=on_ok).pack(side="left", padx=4)
+        ttk.Button(btns, text="Abbrechen", command=dlg.destroy).pack(side="left", padx=4)
+
+        dlg.wait_window()
+        return result["eintrag"]  # type: ignore[return-value]
 
     # --- Excel-Auswahl -----------------------------------------------------
 
