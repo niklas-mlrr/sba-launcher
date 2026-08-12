@@ -24,6 +24,7 @@ import os
 import queue
 import subprocess
 import threading
+from collections.abc import Callable
 from pathlib import Path
 
 # Signale, dass der Stream zu Ende ist (Prozess beendet). Einzigartiger
@@ -207,3 +208,51 @@ class SubprocessManager:
                 self._log.get_nowait()
             except queue.Empty:
                 break
+
+
+# --- Ein-Schuss-Kommandos (streaming) -------------------------------------
+#
+# Für Install/Update-Schritte (uv sync, npm install, git pull), die laufen,
+# ein Ergebnis liefern und enden — im Gegensatz zum Long-Running-Server,
+# der einen SubprocessManager belegt. stdout+stderr werden zeilenweise an
+# eine ``log``-Callback gereicht; die GUI hängt sie thread-safe ins LogView.
+
+
+def run_streaming(
+    cmd: list[str] | str,
+    log: Callable[[str], None],
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
+    timeout: float = 600.0,
+    shell: bool = False,
+) -> int:
+    """Führt ein Ein-Schuss-Kommando aus; streamt stdout+stderr nach ``log``.
+
+    Liefert den Exit-Code. Kein ``raise`` — der Aufrufer prüft auf ``!= 0``
+    und erzeugt eine klare Fehlermeldung (mit Kommando + Exit-Code).
+
+    ``shell=True`` (mit ``cmd`` als String) wird für Windows-``.cmd``-Aufrufe
+    gebraucht (z. B. ``npm.cmd``); auf POSIX läuft ``npm`` als normales Skript
+    und braucht kein Shell.
+    """
+    log(f"$ {cmd if isinstance(cmd, str) else ' '.join(cmd)}")
+    kwargs: dict = {
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.STDOUT,
+        "text": True,
+        "bufsize": 1,
+        "shell": shell,
+    }
+    if env is not None:
+        kwargs["env"] = env
+    proc = subprocess.Popen(cmd, cwd=str(cwd) if cwd else None, **kwargs)
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        log(line.rstrip("\n"))
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        log(f"[Zeitüberschreitung nach {timeout}s — Prozess gekillt]")
+    return proc.returncode

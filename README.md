@@ -13,9 +13,16 @@ Entwickler die Schule verlassen haben. Dazu ein Bestand-Katalog-Editor
 
 ## Status
 
-Phase 0 — Gerüst (Repo, Start-Skripte, core-Pfade/.env-IO, minimales GUI-Fenster
-mit vier Tabs). Klonen/Starten/Bestand/Editor folgen in den Phasen 1–5
-(siehe Plan in `~/projects/sba/sba-launcher`/`docs`).
+- **Phase 0** — Gerüst (Repo, Start-Skripte, `core/paths`+`prereqs`+`envtool`,
+  minimales GUI-Fenster mit vier Tabs).
+- **Phase 1** — Tab ausleihe-ausgabe: clone/update/start/stop + Log-View +
+  Host-öffnen + zentrale `.env`-Form.
+- **Phase 2** — Tab Barcode-Scanner: clone/update/start/stop (zwei Subprozesse:
+  Node-Server + Python-Client) + QR-View (grafisch via `qrcode[pil]` aus der
+  geparsten Scanner-URL, ASCII-QR zusätzlich im Log) + portables Node-Bootstrap
+  (LTS v22.23.2, Download+Entpacken bei Bedarf). 92 Unit-Tests grün.
+- Bestand-Katalog-Editor + Hilfe/Polish folgen in den Phasen 3–5
+  (siehe Plan `~/.claude/plans/scalable-watching-starlight.md`).
 
 ## Architektur
 
