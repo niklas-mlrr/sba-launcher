@@ -1,75 +1,183 @@
 # SBA-Launcher
 
-Zentrale GUI für die drei SBA-Werkzeuge der Schulbuchausleihe:
+Der SBA-Launcher ist das Startfenster für die Werkzeuge der
+Schulbuchausleihe. Er ist für Nachfolgerinnen und Nachfolger gedacht, die
+nicht programmieren und keine technischen Vorkenntnisse haben.
 
-- **ausleihe-ausgabe** — Handy-Scanner für Stapelerstellung (Modus A) + Live-Ausgabe (Modus B). Python/uv, FastAPI, Playwright.
-- **Bestand-/Nachbestellungs-Excel** — aktualisiert die Bestandsliste aus IServ (read-only GET). Python, openpyxl, `ausleihe-api[bestand]`.
-- **barcode-simple** — eigenständiger Barcode-Scanner (Node.js-Server + Python-Client).
+Die wichtigsten Regeln:
 
-Der Launcher installiert, updated, startet und stopt diese Werkzeuge für
-nicht-technische Nachfolger im Ausleihe-Team, sobald die ursprünglichen
-Entwickler die Schule verlassen haben. Dazu ein Bestand-Katalog-Editor
-(Fach × Jahrgang → ISBN, Mehrjahresband).
+- Im Alltag werden die großen Schaltflächen im Launcher verwendet.
+- Bei der ersten Nutzung zuerst „Einrichtung“ ausführen.
+- Bei der Bestandsliste immer zuerst „Erst prüfen (nichts ändern)“ anklicken.
+- Wenn etwas nicht funktioniert, ist der USB-Handscanner im offiziellen
+  IServ-Ausleihe-Frontend der dauerhafte Notnagel.
 
-## Status
+## 1. Das Fenster öffnen
 
-- **Phase 0** — Gerüst (Repo, Start-Skripte, `core/paths`+`prereqs`+`envtool`,
-  minimales GUI-Fenster mit vier Tabs).
-- **Phase 1** — Tab ausleihe-ausgabe: clone/update/start/stop + Log-View +
-  Host-öffnen + zentrale `.env`-Form.
-- **Phase 2** — Tab Barcode-Scanner: clone/update/start/stop (zwei Subprozesse:
-  Node-Server + Python-Client) + QR-View (grafisch via `qrcode[pil]` aus der
-  geparsten Scanner-URL, ASCII-QR zusätzlich im Log) + portables Node-Bootstrap
-  (LTS v22.23.2, Download+Entpacken bei Bedarf).
-- **Phase 3** — Tab Bestand MVP: Excel auswählen, Dry-run/echter Lauf (mit
-  Bestätigung), `safety_stock` + `match_overrides` als Roh-Editor, Report im
-  Log-View. `core/bestand.py` shellt `update_bestand_auto.py` im eigenen
-  `.venv-bestand` (GET-only); `install` klont nur `ausleihe-api`. 135 Unit-Tests grün.
-- Katalog-Voll-Editor + Hilfe/Polish folgen in den Phasen 4–5
-  (siehe Plan `~/.claude/plans/scalable-watching-starlight.md`).
+Der Launcher liegt auf dem Ausleihe-Laptop zum Beispiel in
+C:\SBA\sba-launcher.
 
-## Architektur
+1. Den Ordner im Windows-Explorer öffnen.
+2. „start.bat“ doppelt anklicken.
+3. Warten, bis das Fenster „SBA-Launcher – Schulbuchausleihe“ erscheint.
 
-- **`core/`** — Orchestrierungslogik (Git, uv, npm, Subprocess, .env-IO, Katalog),
-  **ohne Tkinter-Import**, voll unit-testbar auf dem headless VPS via
-  `uv run pytest`.
-- **`gui/`** — dünne Tkinter-Bindings an `core/`-Funktionen; manuell auf dem
-  Windows-Laptop gesmoket.
+Beim ersten Start werden benötigte Grundprogramme automatisch vorbereitet. Das
+Fenster darf währenddessen nicht geschlossen werden. Eine Internetverbindung
+wird nur für die Einrichtung oder eine Aktualisierung benötigt.
 
-Ziel-Layout auf dem Ausleihe-Laptop (`C:\SBA\`):
+## 2. Einmalige Einrichtung
 
-```
-C:\SBA\
-├── sba-launcher\        ← dieses Repo (start.bat, launcher.py)
-├── ausleihe-ausgabe\    ← vom Launcher geklont
-├── ausleihe-api\        ← vom Launcher geklont
-└── barcode-simple\      ← vom Launcher geklont
-```
+Die Einrichtung muss normalerweise nur einmal pro Laptop gemacht werden.
 
-Der Launcher referenziert Geschwister via `../<repo>` relativ zum eigenen Root
-(`core/paths.py`) — gleiche Konvention wie das Bestand-Projekt.
+### Ausleihe & Ausgabe
 
-## Start (Windows)
+1. Den Tab „Ausleihe & Ausgabe“ öffnen.
+2. Auf „Einrichtung“ klicken und warten, bis sie abgeschlossen ist.
+3. Die Zugangsdaten eintragen:
+   - IServ-Adresse und Benutzername des dafür vorgesehenen SBA-Kontos
+   - IServ-Passwort
+   - ein selbst festgelegtes Passwort für das Arbeitsfenster
+4. Auf „Zugangsdaten speichern“ klicken.
 
-```
-start.bat
-```
+Die Zugangsdaten gehören zum SBA-Team. Sie dürfen nicht verschickt, in den
+Chat kopiert oder in ein Protokoll geschrieben werden.
 
-Bootet `uv` (falls fehlt), installiert Abhängigkeiten, öffnet das Launcher-Fenster.
+Für den Leihschein-Druck sollte ein USB-Drucker angeschlossen und in Windows
+als Standarddrucker eingerichtet sein. Die ausführliche Anleitung im Hilfe-Tab
+erklärt auch den ersten Browser-Aufruf und die Zertifikat-Warnung.
 
-## Dev (VPS, headless)
+### Bestandsliste
 
-```
+Wenn die jährliche Excel-Bestandsliste genutzt werden soll:
+
+1. Den Tab „Bestandsliste“ öffnen.
+2. Auf „Einrichtung“ klicken.
+3. Warten, bis die Einrichtung abgeschlossen ist.
+
+Die Bestandsliste kann unabhängig vom Ausleihe-Tab eingerichtet werden. Die
+IServ-Zugangsdaten werden nach der Einrichtung im Ausleihe-Tab gespeichert.
+
+### Barcode-Scanner
+
+Der Tab „Barcode-Scanner“ ist für den eigenständigen Scanner. Er muss nur
+eingerichtet werden, wenn dieser Ablauf im SBA-Team verwendet werden soll:
+
+1. Tab „Barcode-Scanner“ öffnen.
+2. „Einrichtung“ klicken.
+3. Warten, bis sie abgeschlossen ist.
+
+## 3. Bücherstapel bearbeiten
+
+Das ist der normale Ablauf während der Ausgabe:
+
+1. Laptop mit dem Schul-WLAN verbinden und Drucker einschalten.
+2. Im Tab „Ausleihe & Ausgabe“ auf „Ausleihe starten“ klicken.
+3. „Arbeitsfenster öffnen“ klicken und mit dem Passwort für das
+   Arbeitsfenster anmelden.
+4. Das richtige Schuljahr und die richtige Klasse auswählen.
+5. Den QR-Code für die Helfer anzeigen lassen.
+6. Helfer scannen die Bücher mit ihren Handys. Bei einer Zertifikat-Warnung
+   muss die lokale Seite einmal bestätigt werden.
+7. Nach dem Einsatz auf „Ausleihe beenden“ klicken.
+
+Wenn ein Handy den Laptop nicht erreicht, müssen beide Geräte im selben WLAN
+sein. Die ausführliche Anleitung beschreibt außerdem, welche Meldung bei einem
+falschen, verliehenen oder ausgemusterten Buch zu beachten ist.
+
+## 4. Bestandsliste aktualisieren
+
+Die Bestandsliste wird normalerweise einmal pro Jahr bearbeitet.
+
+1. Im Tab „Bestandsliste“ bei „Jahres-Excel“ auf „Datei auswählen …“ klicken.
+2. Die Excel-Datei des aktuellen Schuljahres auswählen.
+3. Auf „Erst prüfen (nichts ändern)“ klicken.
+4. Den Prüfbericht im unteren Fenster lesen. Stimmen Fächer, Jahrgänge und
+   Zahlen ungefähr?
+5. Nur wenn der Bericht plausibel ist: „Excel aktualisieren“ klicken.
+6. Die aktualisierte Excel anschließend öffnen und stichprobenartig prüfen.
+
+Die Prüfung liest Daten aus IServ, ändert aber die Excel-Datei nicht. Beim
+echten Aktualisieren wird vorher eine Sicherungskopie angelegt. Der Vorgang
+schreibt niemals Daten zurück nach IServ.
+
+### Buchkatalog
+
+Der Buchkatalog ordnet Fach, Jahrgang und Buchnummer einander zu.
+
+- „Bücher aus Excel übernehmen“ liest eine vorhandene Excel in den Katalog.
+- „Neue Excel aus Katalog“ erstellt eine neue Excel aus der mitgelieferten
+  Vorlage. Die Vorlage muss nicht selbst gesucht werden.
+- „Hinzufügen“ und „Bearbeiten“ ändern eine Buch-Zuordnung.
+- „Entfernen“ entfernt eine Zuordnung zunächst nur im Fenster.
+- „Katalog speichern“ speichert die Änderungen dauerhaft.
+- „Änderungen verwerfen / neu laden“ lädt den zuletzt gespeicherten Stand.
+- „Zuordnungen übernehmen“ wird nur verwendet, wenn die Bestandsprüfung eine
+  Zuordnung ausdrücklich braucht.
+
+Eine ISBN ist die Buchnummer, die normalerweise auf dem Buch oder seiner
+Verlagsangabe steht. „Mehrere Jg.“ bedeutet Mehrjahresband: Das Buch gilt für
+mehr als einen Jahrgang. Die zusätzlichen Einstellungen darunter sind für
+Sonderfälle und sollten ohne Rücksprache nicht verändert werden.
+
+## 5. Sicherheitsregel für Buchungen
+
+Der Launcher führt keine Buchungen direkt über eine selbst programmierte
+Schnittstelle aus. Er schaltet die Einstellung „ALLOW_BOOKING“ nicht um.
+Diese Einstellung ist der Sicherheits-Schalter: Aus bedeutet, dass ein Scan
+nur vorgemerkt wird. Bei einer echten Freigabe wird nur gebucht, wenn das Buch
+im Lager liegt, die Person es bestellt hat und noch kein Buch aus derselben
+Reihe ausgeliehen ist.
+
+Buchungen dürfen nur im echten, ausdrücklich freigegebenen Einsatz erfolgen.
+Zum Ausprobieren muss der Scan-Modus so vorbereitet sein, dass nur
+vorgemerkt und nichts gebucht wird. Wenn unklar ist, welcher Modus aktiv ist:
+
+1. nicht weiter scannen,
+2. keine technischen Dateien oder Einstellungen ändern,
+3. die verantwortliche Person im SBA-Team fragen.
+
+## 6. Wenn etwas nicht funktioniert
+
+- **Einrichtung bricht ab:** Internetverbindung prüfen und den Vorgang noch
+  einmal starten.
+- **IServ-Anmeldung scheitert:** Zugangsdaten prüfen lassen. Passwörter nicht
+  in Fehlermeldungen hineinschreiben.
+- **Handy findet den Laptop nicht:** Gleiches WLAN verwenden und die
+  Zertifikat-Warnung einmal bestätigen.
+- **Druck funktioniert nicht:** Drucker einschalten, als Standarddrucker
+  auswählen und Papier prüfen.
+- **IServ wurde geändert oder das Werkzeug bleibt unverständlich:** auf den
+  USB-Handscanner und das offizielle IServ-Ausleihe-Frontend zurückfallen.
+
+Der USB-Handscanner ist kein Notbehelf, der „kaputt“ geht: Er ist der
+dauerhaft verfügbare Weg, mit dem die Ausleihe auch ohne den Launcher
+weitergeführt werden kann. Bei einem Fehler den genauen Meldungstext oder
+einen Screenshot an die verantwortliche Person weitergeben.
+
+## 7. Ausführliche Anleitung
+
+Im Tab „Hilfe“ können die vollständige Text-Anleitung und die PDF-Version
+geöffnet werden. Die Quelle liegt im Ordner des Hauptwerkzeugs:
+
+- „ausleihe-ausgabe/docs/nachfolge-anleitung.md“
+- „ausleihe-ausgabe/docs/Nachfolge-Anleitung.pdf“
+
+Die ausführliche Anleitung ist die maßgebliche Beschreibung für Sonderfälle,
+Druckerprobleme und die sichere Nutzung im laufenden Ausleihe-Einsatz.
+
+## Optional: technische Pflege
+
+Dieser Abschnitt ist nur für eine technisch betreuende Person gedacht.
+
+Der Launcher ist ein Python/Tkinter-Programm ohne gebündelte EXE. Die Tests
+laufen im Launcher-Ordner mit:
+
+```bash
 uv sync
-uv run pytest        # core-Tests, tkinter-frei
+uv run pytest
+uvx ruff check gui/ core/ tests/
 ```
 
-GUI nicht testbar ohne Display; `core/` bleibt tk-frei gerade dafür.
-
-## Produktionsschutz
-
-- Der Launcher führt **keine** IServ-Schreibzugriffe aus (nur GET via `ausleihe-api`,
-  `allow_writes=False`).
-- `ALLOW_BOOKING` wird **nicht** umgeschaltet; der Help-Tab dokumentiert die Regel.
-- IServ-Passwörter werden nie geloggt; `.env`-Werte via Subprocess-Umgebung, nicht
-  via CLI-Args. Siehe `ausleihe-ausgabe/CLAUDE.md` für die vollständigen Regeln.
+Die drei Schwesterprojekte werden beim Einrichten automatisch in einem
+gemeinsamen Ordner neben dem Launcher abgelegt. Zugangsdaten und lokale
+Konfigurationsdateien werden nicht in das Git-Repository eingecheckt.

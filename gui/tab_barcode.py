@@ -27,7 +27,7 @@ from core import barcode as bc
 from core import gitops
 from core.process import SubprocessManager
 from gui.qrview import QrView
-from gui.widgets import LogView
+from gui.widgets import LogView, add_tooltip
 
 
 class BarcodeTab(ttk.Frame):
@@ -48,18 +48,36 @@ class BarcodeTab(ttk.Frame):
     def _build(self) -> None:
         top = ttk.Frame(self)
         top.pack(fill="x", padx=12, pady=(12, 4))
-        self._btn_install = ttk.Button(top, text="Installieren", command=self.on_install)
+        self._btn_install = ttk.Button(top, text="Einrichtung", command=self.on_install)
         self._btn_install.pack(side="left", padx=(0, 4))
-        self._btn_update = ttk.Button(top, text="Updaten", command=self.on_update)
+        add_tooltip(
+            self._btn_install,
+            "Einmalig: richtet den eigenständigen Barcode-Scanner auf diesem Laptop ein.",
+        )
+        self._btn_update = ttk.Button(top, text="Aktualisieren", command=self.on_update)
         self._btn_update.pack(side="left", padx=4)
+        add_tooltip(self._btn_update, "Holt eine neue Version des Barcode-Scanners.")
         ttk.Separator(top, orient="vertical").pack(side="left", fill="y", padx=8)
-        self._btn_start = ttk.Button(top, text="Starten", command=self.on_start)
+        self._btn_start = ttk.Button(top, text="Scanner starten", command=self.on_start)
         self._btn_start.pack(side="left", padx=4)
-        self._btn_stop = ttk.Button(top, text="Stoppen", command=self.on_stop)
+        add_tooltip(
+            self._btn_start,
+            "Startet den Scanner. Danach den angezeigten QR-Code mit dem Handy lesen.",
+        )
+        self._btn_stop = ttk.Button(top, text="Scanner beenden", command=self.on_stop)
         self._btn_stop.pack(side="left", padx=4)
+        add_tooltip(self._btn_stop, "Beendet den Barcode-Scanner.")
 
         self._status = ttk.Label(top, text="…")
         self._status.pack(side="right")
+        ttk.Label(
+            self,
+            text="Der QR-Code rechts wird nach dem Start mit dem Handy gescannt. "
+            "Eine Zertifikat-Warnung am Handy ist beim ersten Öffnen erwartet.",
+            foreground="#555555",
+            wraplength=860,
+            justify="left",
+        ).pack(anchor="w", padx=12, pady=(0, 4))
 
         # Mitte: Log (Server+Client) links, QR rechts.
         mid = ttk.Frame(self)
@@ -69,22 +87,21 @@ class BarcodeTab(ttk.Frame):
         self._qr = QrView(mid)
         self._qr.pack(side="right", fill="y", padx=(8, 0))
         self._log.append(
-            "Bereit. Erst 'Installieren' (klont barcode-simple, npm install, "
-            "Client-Venv, portables Node), dann 'Starten'."
+            "Bereit. Bei der ersten Nutzung „Einrichtung“ klicken, danach "
+            "„Scanner starten“."
         )
         self._log.append(
-            "Hinweis: Der Server druckt beim Start einen ASCII-QR ins Log — "
-            "zusätzlich erscheint der grafische QR rechts (sobald die URL "
-            "geparst ist). Zertifikat-Warnung am Handy ist erwartet."
+            "Nach dem Start erscheint der QR-Code rechts. Mit dem Handy scannen; "
+            "bei Bedarf die ausführliche Anleitung in der Hilfe öffnen."
         )
 
     # --- Aktionen ----------------------------------------------------------
 
     def on_install(self) -> None:
-        self._run_async("Installieren", bc.install)
+        self._run_async("Einrichtung", bc.install)
 
     def on_update(self) -> None:
-        self._run_async("Updaten", bc.update)
+        self._run_async("Aktualisierung", bc.update)
 
     def on_start(self) -> None:
         """Startet Server+Client in einem Hintergrund-Thread.
@@ -104,10 +121,10 @@ class BarcodeTab(ttk.Frame):
                 bc.start(self._server_mgr, self._client_mgr, log)
                 self.after(
                     0,
-                    lambda: self._log.append("[Starten] fertig — Server + Client laufen."),
+                    lambda: self._log.append("Scanner gestartet. QR-Code mit dem Handy scannen."),
                 )
             except Exception as e:  # noqa: BLE001 — GUI fängt alles und loggt
-                msg = f"[Starten FEHLER] {e}"
+                msg = f"Scanner konnte nicht gestartet werden: {e}"
                 self.after(0, lambda: self._log.append(msg))
             finally:
                 self.after(0, self._end_busy)
@@ -117,13 +134,13 @@ class BarcodeTab(ttk.Frame):
 
     def on_stop(self) -> None:
         if not (self._server_mgr.is_running() or self._client_mgr.is_running()):
-            self._log.append("Server/Client laufen nicht.")
+            self._log.append("Der Barcode-Scanner läuft gerade nicht.")
             return
-        codes = bc.stop(
+        bc.stop(
             self._server_mgr, self._client_mgr, log=lambda line: self._log.append(line)
         )
         self._log.append(
-            f"gestoppt — Server (Exit {codes['server']}), Client (Exit {codes['client']})."
+            "Barcode-Scanner beendet."
         )
         self._qr.clear()
         self._refresh_status()
@@ -141,9 +158,9 @@ class BarcodeTab(ttk.Frame):
         def worker() -> None:
             try:
                 fn(log)
-                self.after(0, lambda: self._log.append(f"[{label}] fertig."))
+                self.after(0, lambda: self._log.append(f"{label} abgeschlossen."))
             except Exception as e:  # noqa: BLE001
-                msg = f"[{label} FEHLER] {e}"
+                msg = f"{label} nicht abgeschlossen: {e}"
                 self.after(0, lambda: self._log.append(msg))
             finally:
                 self.after(0, self._end_busy)
@@ -178,26 +195,19 @@ class BarcodeTab(ttk.Frame):
             if url is not None:
                 self._qr.set_url(url)
         for ln in self._client_mgr.poll_lines():
-            self._log.append(f"[client] {ln}")
+            self._log.append(f"Scanner: {ln}")
         self.after(interval_ms, lambda: self._poll_streams(interval_ms))
 
     # --- Status ------------------------------------------------------------
 
     def _refresh_status(self) -> None:
-        """Git-Status von barcode-simple + Lauf-Status beider Prozesse."""
+        """Zeigt den verständlichen Einrichtungs- und Laufstatus."""
         st = gitops.status("barcode-simple")
-        if not st.installed:
-            repo = "barcode-simple: fehlt"
-        else:
-            dirty = " (dirty)" if st.dirty else ""
-            repo = f"barcode-simple: {st.branch or '?'}{dirty}"
-        parts = [repo]
+        parts = ["Scanner eingerichtet" if st.installed else "Einrichtung fehlt"]
         if self._server_mgr.is_running():
-            parts.append("Server läuft")
-        if self._client_mgr.is_running():
-            parts.append("Client läuft")
+            parts.append("Scanner läuft")
         if not (self._server_mgr.is_running() or self._client_mgr.is_running()):
-            parts.append("gestoppt")
+            parts.append("Scanner beendet")
         self._status.configure(text="  |  ".join(parts))
 
 

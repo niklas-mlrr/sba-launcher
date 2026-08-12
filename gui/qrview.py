@@ -62,22 +62,26 @@ class QrView(ttk.Frame):
         self._url_var.set(url)
         if not _PIL_OK:
             self._qr_label.configure(
-                image="", text="(grafischer QR deaktiviert — siehe ASCII-QR im Log)"
+                image="", text="Der grafische QR-Code ist nicht verfügbar."
             )
-            self._hint.configure(text="Mit Handy scannen (ASCII-QR siehe Log oben).")
+            self._hint.configure(
+                text="Bitte den QR-Code aus dem Protokoll verwenden oder die Hilfe öffnen."
+            )
             return
         # QR als PIL-Image → ImageTk.PhotoImage. border=4 = Ruhezone (Scan-Erfolg).
         img = qrcode.make(url, box_size=_QR_BOX, border=_QR_BORDER)
         self._photo = ImageTk.PhotoImage(img)
         self._qr_label.configure(image=self._photo, text="")
         self._hint.configure(
-            text="Mit Handy scannen — öffnet den Scanner im Browser "
-            "(Zertifikat-Warnung akzeptieren)."
+            text="Mit dem Handy scannen. Beim ersten Öffnen die Zertifikat-Warnung "
+            "bestätigen."
         )
 
     def clear(self) -> None:
         """Entfernt QR + URL (z. B. beim Stoppen)."""
         self._photo = None
-        self._qr_label.configure(image="", text="Noch keine Scanner-URL — Server starten.")
+        self._qr_label.configure(
+            image="", text="Noch kein QR-Code — zuerst „Scanner starten“ klicken."
+        )
         self._url_var.set("")
         self._hint.configure(text="")

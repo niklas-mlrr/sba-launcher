@@ -111,3 +111,61 @@ class FormField(ttk.Frame):
 
     def focus(self) -> None:
         self._entry.focus_set()
+
+
+class Tooltip:
+    """Zeigt eine kurze Erklärung an, wenn der Mauszeiger ruht.
+
+    Tooltips sind absichtlich nur Zusatzinformationen: Die Oberfläche bleibt
+    auch ohne Maus (z. B. mit Tastatur) vollständig bedienbar.
+    """
+
+    def __init__(self, widget: tk.Widget, text: str, delay_ms: int = 650) -> None:
+        self.widget = widget
+        self.text = text
+        self.delay_ms = delay_ms
+        self._job: str | None = None
+        self._window: tk.Toplevel | None = None
+        widget.bind("<Enter>", self._schedule, add="+")
+        widget.bind("<Leave>", self.hide, add="+")
+        widget.bind("<ButtonPress>", self.hide, add="+")
+
+    def _schedule(self, _event: tk.Event) -> None:
+        self.hide()
+        self._job = self.widget.after(self.delay_ms, self.show)
+
+    def show(self) -> None:
+        self._job = None
+        if self._window is not None or not self.widget.winfo_exists():
+            return
+        self._window = tk.Toplevel(self.widget)
+        self._window.wm_overrideredirect(True)
+        self._window.attributes("-topmost", True)
+        x = self.widget.winfo_rootx() + 8
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        self._window.geometry(f"+{x}+{y}")
+        tk.Label(
+            self._window,
+            text=self.text,
+            justify="left",
+            wraplength=360,
+            background="#fffde8",
+            foreground="#222222",
+            relief="solid",
+            borderwidth=1,
+            padx=7,
+            pady=4,
+        ).pack()
+
+    def hide(self, _event: tk.Event | None = None) -> None:
+        if self._job is not None:
+            self.widget.after_cancel(self._job)
+            self._job = None
+        if self._window is not None:
+            self._window.destroy()
+            self._window = None
+
+
+def add_tooltip(widget: tk.Widget, text: str) -> Tooltip:
+    """Hängt eine verständliche Zusatz-Erklärung an ein Widget."""
+    return Tooltip(widget, text)
