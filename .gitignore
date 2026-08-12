@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# uv
+# uv.lock wird committed (Phase 0 stabil) für reproduzierbare Abhängigkeiten.
+
+# Lokale Werkzeuge (per Bootstrap heruntergeladen, nicht committen)
+tools/
+node/
+python/
+git/
+
+# IServ-Credentials — NIEMALS committen (Produktionsschutz, CLAUDE.md)
+.env
+*.env.local
+
+# Bestand-Artefakte
+data/*.local.json
+
+# OS
+.DS_Store
+Thumbs.db
