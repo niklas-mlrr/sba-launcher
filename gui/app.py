@@ -53,15 +53,16 @@ def build_app(root: tk.Tk) -> ttk.Notebook:
         notebook.add(frame, text=_title)
         if key == "ausleihe":
             # Phase 1: voll angebundener Tab (Logik in core.ausleihe_ausgabe).
-            tab_ausleihe.build(frame)
+            content = tab_ausleihe.build(frame)
         elif key == "bestand":
             # Phase 3: Bestand-Excel (Logik in core.bestand + core.config_io).
-            tab_bestand.build(frame)
+            content = tab_bestand.build(frame)
         elif key == "barcode":
             # Phase 2: Barcode-Scanner (Logik in core.barcode, zwei Subprozesse).
-            tab_barcode.build(frame)
+            content = tab_barcode.build(frame)
         else:
-            tab_help.build(frame)
+            content = tab_help.build(frame)
+        content.pack(fill="both", expand=True)
 
     # Statusleiste (unten): grobe, verständliche Bereitschaftshinweise.
     bar = ttk.Frame(root)
