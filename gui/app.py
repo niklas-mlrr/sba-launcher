@@ -15,15 +15,12 @@ import tkinter as tk
 from tkinter import ttk
 
 from core import prereqs
+from gui import tab_ausleihe
 
-# Tab-Titel + Kurzbeschreibung (Platzhalter-Text bis Phase 1–4).
+# Tab-Titel. Der erste Tab ist voll angebunden (Phase 1); die restlichen
+# bleiben Platzhalter bis Phase 2–5. ``render`` baut den Frame-Inhalt.
 TABS: list[tuple[str, str]] = [
-    (
-        "Ausleihe-Ausgabe",
-        "Handy-Scanner für die Stapelerstellung (Modus A) und Live-Ausgabe (Modus B).\n"
-        "Installieren, Updaten, Server starten/stopen, Host öffnen.\n"
-        "(Phase 1)",
-    ),
+    ("Ausleihe-Ausgabe", "ausleihe"),
     (
         "Bestand",
         "Bestands- und Nachbestellungs-Excel aktualisieren (IServ read-only, GET).\n"
@@ -73,16 +70,22 @@ def build_app(root: tk.Tk) -> ttk.Notebook:
     notebook = ttk.Notebook(root)
     notebook.pack(fill="both", expand=True, padx=8, pady=(8, 0))
 
-    for _title, description in TABS:
+    for _title, key in TABS:
         frame = ttk.Frame(notebook)
         notebook.add(frame, text=_title)
-        _populate_placeholder(frame, _title, description)
+        if key == "ausleihe":
+            # Phase 1: voll angebundener Tab (Logik in core.ausleihe_ausgabe).
+            tab_ausleihe.build(frame)
+        else:
+            _populate_placeholder(frame, _title, key)
 
     # Statusleiste (unten): Werkzeug-Erkennung, gerüst-artig.
     bar = ttk.Frame(root)
     bar.pack(fill="x", padx=8, pady=4)
     ttk.Label(bar, text=build_status_line()).pack(side="left")
-    ttk.Label(bar, text="Phase 0 — Gerüst", foreground="#888").pack(side="right")
+    ttk.Label(bar, text="Phase 1 — Tab ausleihe-ausgabe", foreground="#888").pack(
+        side="right"
+    )
 
     return notebook
 
