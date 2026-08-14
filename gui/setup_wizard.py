@@ -21,7 +21,7 @@ from core import barcode as bc
 from core import bestand as bst
 from core import envtool, gitops
 from gui import theme
-from gui.widgets import Banner, BusyBar, FormField, LogView
+from gui.widgets import Banner, BusyBar, Eyebrow, FormField, LogView
 
 LogFn = Callable[[str], None]
 
@@ -223,6 +223,9 @@ class SetupWizard(tk.Toplevel):
         btn.pack(anchor="w", pady=(0, theme.SP_SM))
         busy = BusyBar(self._body)
         busy.pack(fill="x", pady=(0, theme.SP_SM))
+        Eyebrow(self._body, text="Protokoll · für die Fehlersuche").pack(
+            anchor="w", pady=(0, theme.SP_XS)
+        )
         log = LogView(self._body, height=10)
         log.pack(fill="both", expand=True)
         self._install_button = btn

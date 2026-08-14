@@ -4,18 +4,30 @@ Aktionen: Installieren, Updaten, Server starten/stopen, Host öffnen, plus
 die zentrale ``.env``-Form (IServ-Zugang + Host-Passwort), die in **beide**
 Geschwister-``.env`` schreibt.
 
-Phase 7 — Zonen-Neubau: Kopf (Titel + Einordnung) → Hauptaktions-Karte
-(tägliche Start/Öffnen/Beenden-Knöpfe) → sekundäre Werkzeugleiste (seltene
-Einrichtung/Aktualisieren, bewusst kleiner und abgesetzt) → Status-Banner →
-Log → Zugangsdaten-Karte. Lange Operationen (install/update) laufen in einem
-Hintergrund-Thread; deren ``log``-Callback hängt Zeilen thread-safe via
-``after(0, …)`` ins LogView. Der dauerhafte Server streamt selbst über den
-:class:`~core.process.SubprocessManager` (eigener Thread + Queue).
+Phase 8 — Layout-Neubau für Nicht-Techniker (Apple-Design-Prinzipien,
+Tkinter-übersetzt): statt einer flachen Kette aus Knöpfen + Banner + Log +
+Form gibt es eine klare vertikale Hierarchie — *Bereitschaft zuerst, dann die
+eine tägliche Aktion, dann Verwaltung, dann Protokoll*:
+
+1. **Status-Leiste** (``StatusBar``) — primäre Rückmeldung: Zustand + nächste
+   Aktion auf einen Blick (§16 Wayfinding).
+2. **Tägliche Bedienung** — ein *zustandsabhängiger* Haupt-Knopf: läuft nichts
+   → „Ausleihe starten” (blau); läuft die Ausleihe → „Ausleihe beenden” (rot,
+   an gleicher Stelle). Eine offensichtliche Aktion pro Bildschirm, immer die
+   richtige (§6 Einfachheit).
+3. **Verwaltung** (eingeklappt, ``CollapsibleSection``) — Einrichtung/
+   Aktualisieren + Zugangsdaten-Form. Bewusst sekundär: ehrlich beschriftet,
+   nicht versteckt (§6: common path first, advanced one level deeper).
+4. **Protokoll** (``Eyebrow`` + ``LogView``, reduziert) — für die Fehlersuche,
+   nicht der erste Anblick.
+
+Lange Operationen (install/update) laufen in einem Hintergrund-Thread; deren
+``log``-Callback hängt Zeilen thread-safe via ``after(0, …)`` ins LogView. Der
+dauerhafte Server streamt selbst über den :class:`~core.process.SubprocessManager`.
 
 Produktionsschutz: die Form speichert nur in ``.env`` — kein Schreiben ans
 IServ, kein Umschalten von ``ALLOW_BOOKING``. ``.env``-Speichern ist
-gesperrt, solange die Repos noch nicht geklont sind (sonst entstünde ein
-leeres Repo-Verzeichnis, das clone später blockieren würde).
+gesperrt, solange die Repos noch nicht geklont sind.
 """
 
 from __future__ import annotations
@@ -28,7 +40,15 @@ from core import ausleihe_ausgabe as aa
 from core import envtool, gitops, paths
 from core.process import SubprocessManager
 from gui import theme
-from gui.widgets import Banner, BusyBar, FormField, LogView, add_tooltip
+from gui.widgets import (
+    BusyBar,
+    CollapsibleSection,
+    Eyebrow,
+    FormField,
+    LogView,
+    StatusBar,
+    add_tooltip,
+)
 
 # Form-Felder: (key, label, masked). Einzige Quelle: core.envtool.FORM_FIELDS
 # (teilt sich mit dem Ersteinrichtungs-Assistenten ``gui/setup_wizard.py``).
@@ -45,13 +65,13 @@ class AusleiheTab(ttk.Frame):
         self._build()
         self._load_form_into_fields()
         self._refresh_status()
-        # Poll-Schleife für den Server-Stream starten (läuft selbst weiter).
+        # Poll-Schleife für den Server-Stream (läuft selbst weiter).
         self._log.poll(self._manager)
 
     # --- Aufbau ------------------------------------------------------------
 
     def _build(self) -> None:
-        # Kopf: Titel + Einordnung (statt Banner-als-erstes).
+        # Kopf: Titel + Einordnung.
         header = ttk.Frame(self)
         header.pack(fill="x", padx=theme.SP_LG, pady=(theme.SP_LG, theme.SP_SM))
         ttk.Label(header, text="Ausleihe & Ausgabe", style=theme.HEADING_LABEL).pack(anchor="w")
@@ -64,19 +84,25 @@ class AusleiheTab(ttk.Frame):
             justify="left",
         ).pack(anchor="w", pady=(theme.SP_XS, 0))
 
-        # Hauptaktions-Karte: die täglichen Knöpfe, groß und hervorgehoben.
-        primary = ttk.LabelFrame(
-            self, text="Tägliche Bedienung", style=theme.CARD_FRAME
-        )
+        # Status-Leiste: primäre Rückmeldung — Zustand + nächste Aktion.
+        self._status = StatusBar(self)
+        self._status.pack(fill="x", padx=theme.SP_LG, pady=(0, theme.SP_SM))
+
+        # Busy-Bar (nur während langer Aktionen sichtbar).
+        self._busy_bar = BusyBar(self)
+        self._busy_bar.pack(fill="x", padx=theme.SP_LG)
+
+        # Tägliche Bedienung: der eine, zustandsabhängige Haupt-Knopf + Öffnen.
+        primary = ttk.LabelFrame(self, text="Tägliche Bedienung", style=theme.CARD_FRAME)
         primary.pack(fill="x", padx=theme.SP_LG, pady=theme.SP_SM)
         prow = ttk.Frame(primary, style="Card.TFrame")
         prow.pack(fill="x", padx=theme.SP_MD, pady=theme.SP_MD)
-        self._btn_start = ttk.Button(
+        self._btn_primary = ttk.Button(
             prow, text="Ausleihe starten", style=theme.PRIMARY_BUTTON, command=self.on_start
         )
-        self._btn_start.pack(side="left", padx=(0, theme.SP_SM))
+        self._btn_primary.pack(side="left", padx=(0, theme.SP_SM))
         add_tooltip(
-            self._btn_start,
+            self._btn_primary,
             "Startet den Dienst auf diesem Laptop. Danach das Arbeitsfenster öffnen.",
         )
         self._btn_open = ttk.Button(
@@ -87,21 +113,39 @@ class AusleiheTab(ttk.Frame):
             self._btn_open,
             "Öffnet die Seite, auf der du Schuljahr, Klasse und Helfer auswählst.",
         )
-        self._btn_stop = ttk.Button(
-            prow, text="Ausleihe beenden", command=self.on_stop
-        )
-        self._btn_stop.pack(side="left", padx=theme.SP_SM)
-        add_tooltip(self._btn_stop, "Beendet die Ausleihe nach dem Einsatz.")
 
-        # Sekundäre Werkzeugleiste: seltene, einmalige Aktionen — bewusst
-        # kleiner und abgesetzt, keine Peers der täglichen Knöpfe.
-        secondary = ttk.Frame(self)
-        secondary.pack(fill="x", padx=theme.SP_LG, pady=(0, theme.SP_SM))
-        ttk.Label(
-            secondary, text="Einmalig / selten:", style=theme.MUTED_LABEL
-        ).pack(side="left", padx=(0, theme.SP_SM))
+        # Verwaltung: seltene / einmalige Aktionen + Zugangsdaten — eingeklappt,
+        # sobald die Ausleihe bereit ist (§6: advanced one level deeper).
+        self._verwaltung = CollapsibleSection(
+            self, title="Verwaltung · nur bei der Einrichtung / selten", expanded=False
+        )
+        self._verwaltung.pack(fill="x", padx=theme.SP_LG, pady=(0, theme.SP_SM))
+        self._build_verwaltung(self._verwaltung.body)
+
+        # Protokoll: bewusst sekundär — für die Fehlersuche, nicht der Alltag.
+        log_row = ttk.Frame(self)
+        log_row.pack(fill="both", expand=True, padx=theme.SP_LG, pady=(0, theme.SP_LG))
+        Eyebrow(log_row, text="Protokoll · für die Fehlersuche").pack(
+            anchor="w", pady=(0, theme.SP_XS)
+        )
+        self._log = LogView(log_row, height=8)
+        self._log.pack(fill="both", expand=True)
+        self._log.append(
+            "Bereit. Bei der ersten Nutzung „Einrichtung” klicken (in der Verwaltung "
+            "oder über die Status-Leiste), danach Zugangsdaten eintragen und speichern."
+        )
+        self._log.append(
+            "Beim Öffnen kann eine Zertifikat-Warnung erscheinen. Im lokalen "
+            "Schul-WLAN ist das erwartet; die Hilfe erklärt den nächsten Klick."
+        )
+
+    def _build_verwaltung(self, parent: tk.Widget) -> None:
+        """Einrichtung/Aktualisieren + Zugangsdaten-Form im eingeklappten Bereich."""
+        # Seltene Aktionen.
+        actions = ttk.Frame(parent)
+        actions.pack(fill="x", pady=(0, theme.SP_XS))
         self._btn_install = ttk.Button(
-            secondary, text="Einrichtung", style=theme.SECONDARY_BUTTON, command=self.on_install
+            actions, text="Einrichtung", style=theme.SECONDARY_BUTTON, command=self.on_install
         )
         self._btn_install.pack(side="left", padx=(0, theme.SP_SM))
         add_tooltip(
@@ -109,38 +153,20 @@ class AusleiheTab(ttk.Frame):
             "Einmalig: lädt die benötigten Teile herunter und bereitet die Ausleihe vor.",
         )
         self._btn_update = ttk.Button(
-            secondary, text="Aktualisieren", style=theme.SECONDARY_BUTTON, command=self.on_update
+            actions, text="Aktualisieren", style=theme.SECONDARY_BUTTON, command=self.on_update
         )
         self._btn_update.pack(side="left")
         add_tooltip(
             self._btn_update,
             "Holt eine neue Version. Nur verwenden, wenn eine Aktualisierung nötig ist.",
         )
+        ttk.Label(
+            parent, text="Einmalig / selten — im Alltag nicht nötig.", style=theme.MUTED_LABEL
+        ).pack(anchor="w", pady=(0, theme.SP_MD))
 
-        # Status-Banner.
-        self._banner = Banner(self, "")
-        self._banner.pack(fill="x", padx=theme.SP_LG, pady=(0, theme.SP_SM))
-
-        self._busy_bar = BusyBar(self)
-        self._busy_bar.pack(fill="x", padx=theme.SP_LG)
-
-        # Log (Arbeitsfenster).
-        self._log = LogView(self, height=12)
-        self._log.pack(fill="both", expand=True, padx=theme.SP_LG, pady=theme.SP_SM)
-        self._log.append(
-            "Bereit. Bei der ersten Nutzung „Einrichtung“ klicken, danach "
-            "Zugangsdaten eintragen und speichern."
-        )
-        self._log.append(
-            "Beim Öffnen kann eine Zertifikat-Warnung erscheinen. Im lokalen "
-            "Schul-WLAN ist das erwartet; die Hilfe erklärt den nächsten Klick."
-        )
-
-        # Zugangsdaten-Karte (unten).
-        form = ttk.LabelFrame(
-            self, text="Zugangsdaten (nur bei der Einrichtung)", style=theme.CARD_FRAME
-        )
-        form.pack(fill="x", padx=theme.SP_LG, pady=(0, theme.SP_LG))
+        # Zugangsdaten (nur bei der Einrichtung).
+        form = ttk.LabelFrame(parent, text="Zugangsdaten", style=theme.CARD_FRAME)
+        form.pack(fill="x")
         self._fields: dict[str, FormField] = {}
         for key, label, masked in _ENV_FIELDS:
             f = FormField(form, label=label, masked=masked)
@@ -151,7 +177,7 @@ class AusleiheTab(ttk.Frame):
             text="Die Angaben bleiben auf diesem Laptop. Passwörter werden nicht im "
             "Protokoll angezeigt.",
             style=theme.CARD_MUTED_LABEL,
-            wraplength=860,
+            wraplength=820,
             justify="left",
         ).pack(anchor="w", padx=theme.SP_MD, pady=(theme.SP_SM, theme.SP_XS))
         ttk.Button(
@@ -181,16 +207,16 @@ class AusleiheTab(ttk.Frame):
         """Schreibt die Form in **beide** ``.env`` — nur wenn Repos geklont."""
         if not (paths.exists("ausleihe-ausgabe") and paths.exists("ausleihe-api")):
             self._log.append(
-                "Die Einrichtung ist noch nicht fertig. Bitte zuerst „Einrichtung“ "
+                "Die Einrichtung ist noch nicht fertig. Bitte zuerst „Einrichtung” "
                 "klicken; die eingetragenen Werte bleiben im Formular."
             )
             return
         values = {key: f.get() for key, f in self._fields.items()}
         envtool.write_form(values)
         self._log.append(
-            "Zugangsdaten gespeichert. Die Ausleihe kann jetzt gestartet werden.",
-            kind="success",
+            "Zugangsdaten gespeichert. Die Ausleihe kann jetzt gestartet werden.", kind="success"
         )
+        self._refresh_status()
 
     # --- Aktionen ----------------------------------------------------------
 
@@ -204,15 +230,17 @@ class AusleiheTab(ttk.Frame):
         try:
             aa.start_server(self._manager)
             self._log.append(
-                "Ausleihe gestartet. Jetzt „Arbeitsfenster öffnen“ klicken.", kind="success"
+                "Ausleihe gestartet. Jetzt „Arbeitsfenster öffnen” klicken.", kind="success"
             )
         except Exception as e:  # noqa: BLE001 — GUI fängt alles und loggt
             self._log.append(f"Ausleihe konnte nicht gestartet werden: {e}", kind="error")
-            self._banner.set_text(
-                "Start fehlgeschlagen. Wenn das nicht klappt: USB-Handscanner und "
-                "offizielles IServ-Ausleihe-Frontend verwenden.",
+            self._status.set(
                 "error",
+                "Start fehlgeschlagen",
+                "Wenn das nicht klappt: USB-Handscanner und offizielles "
+                "IServ-Ausleihe-Frontend verwenden.",
             )
+            return  # Fehlerstatus stehen lassen — kein Refresh überschreibt ihn.
         self._refresh_status()
 
     def on_stop(self) -> None:
@@ -255,10 +283,10 @@ class AusleiheTab(ttk.Frame):
                 self.after(0, lambda: self._log.append(msg, kind="error"))
                 self.after(
                     0,
-                    lambda: self._banner.set_text(
-                        f"{label} fehlgeschlagen. Internetverbindung prüfen und "
-                        "erneut versuchen.",
+                    lambda: self._status.set(
                         "error",
+                        f"{label} fehlgeschlagen",
+                        "Internetverbindung prüfen und erneut versuchen.",
                     ),
                 )
             finally:
@@ -269,14 +297,18 @@ class AusleiheTab(ttk.Frame):
 
     def _begin_busy(self, label: str) -> None:
         self._busy = True
-        for b in (self._btn_install, self._btn_update, self._btn_start, self._btn_stop):
+        for b in (self._btn_install, self._btn_update, self._btn_primary, self._btn_open):
             b.state(["disabled"])
         self._busy_bar.start(f"{label} läuft …")
-        self._banner.set_text(f"{label} läuft …", "warning")
+        self._status.set(
+            "warning", f"{label} läuft", "Bitte warten — das kann einen Moment dauern."
+        )
 
     def _end_busy(self) -> None:
         self._busy = False
-        for b in (self._btn_install, self._btn_update, self._btn_start, self._btn_stop):
+        # Einrichtung/Aktualisieren sind immer verfügbar; primary/open setzt
+        # _refresh_status passend zum aktuellen Zustand.
+        for b in (self._btn_install, self._btn_update):
             b.state(["!disabled"])
         self._busy_bar.stop()
         # Nach install/update können die Repos neu da sein → Form neu laden.
@@ -290,18 +322,67 @@ class AusleiheTab(ttk.Frame):
         return self._manager.is_running()
 
     def _refresh_status(self) -> None:
-        """Lokaler Git-Status + Server-Lauf-Status als Banner-Ampel."""
+        """Setzt Status-Leiste + zustandsabhängigen Haupt-Knopf neu.
+
+        Vier Zustände: läuft → Beenden (rot); bereit (eingerichtet + Zugangs-
+        daten) → Starten (blau); fast bereit (eingerichtet, Zugangsdaten fehlen)
+        → Verwaltung öffnen; nicht eingerichtet → Einrichtung starten.
+        """
         installed = all(gitops.status(name).installed for name in aa.AUSLEIHE_REPOS)
+        env_ready = paths.env_file("ausleihe-ausgabe").is_file()
         running = self._manager.is_running()
         if running:
-            self._banner.set_text("Ausleihe läuft. Danach nicht vergessen zu beenden.", "success")
+            self._btn_primary.configure(
+                text="Ausleihe beenden", style=theme.DANGER_BUTTON, command=self.on_stop
+            )
+            self._btn_primary.state(["!disabled"])
+            self._btn_open.state(["!disabled"])
+            self._status.set(
+                "success",
+                "Ausleihe läuft",
+                "Nicht vergessen, nach dem Einsatz „Ausleihe beenden” zu klicken.",
+                action_text="Ausleihe beenden",
+                action_cmd=self.on_stop,
+                action_style=theme.DANGER_BUTTON,
+            )
+        elif installed and env_ready:
+            self._btn_primary.configure(
+                text="Ausleihe starten", style=theme.PRIMARY_BUTTON, command=self.on_start
+            )
+            self._btn_primary.state(["!disabled"])
+            self._btn_open.state(["disabled"])
+            self._status.set(
+                "info",
+                "Bereit",
+                "Auf „Ausleihe starten” klicken, danach das Arbeitsfenster öffnen.",
+            )
         elif installed:
-            self._banner.set_text(
-                "Ausleihe eingerichtet und beendet. Bereit für „Ausleihe starten“.", "info"
+            self._btn_primary.configure(
+                text="Ausleihe starten", style=theme.PRIMARY_BUTTON, command=self.on_start
+            )
+            self._btn_primary.state(["disabled"])
+            self._btn_open.state(["disabled"])
+            self._status.set(
+                "warning",
+                "Fast bereit",
+                "Zugangsdaten fehlen — unten „Verwaltung” ausklappen, eintragen und speichern.",
+                action_text="Verwaltung öffnen",
+                action_cmd=self._verwaltung.expand,
+                action_style=theme.SECONDARY_BUTTON,
             )
         else:
-            self._banner.set_text(
-                "Noch nicht eingerichtet. Zuerst „Einrichtung“ klicken.", "warning"
+            self._btn_primary.configure(
+                text="Ausleihe starten", style=theme.PRIMARY_BUTTON, command=self.on_start
+            )
+            self._btn_primary.state(["disabled"])
+            self._btn_open.state(["disabled"])
+            self._status.set(
+                "warning",
+                "Noch nicht eingerichtet",
+                "Einrichtung lädt die nötigen Teile (einmalig, kann einige Minuten dauern).",
+                action_text="Einrichtung starten",
+                action_cmd=self.on_install,
+                action_style=theme.SECONDARY_BUTTON,
             )
 
 

@@ -36,12 +36,16 @@ Am einfachsten im Tab „Start“ auf „Ersteinrichtung starten“ klicken — 
 Assistent führt nacheinander durch Ausleihe & Ausgabe, Zugangsdaten,
 Bestandsliste (optional) und Barcode-Scanner (optional). Jeder Schritt lässt
 sich überspringen und später im jeweiligen Tab nachholen. Alternativ können
-die folgenden Schritte auch einzeln in den Tabs ausgeführt werden.
+die folgenden Schritte auch einzeln in den Tabs ausgeführt werden: Die
+Status-Leiste oben zeigt, was fehlt, und hat oft schon den passenden Knopf
+dabei. „Einrichtung“ und „Aktualisieren“ liegen eingeklappt unter
+„Verwaltung · nur bei der Einrichtung / selten“.
 
 ### Ausleihe & Ausgabe
 
 1. Den Tab „Ausleihe & Ausgabe“ öffnen.
-2. Auf „Einrichtung“ klicken und warten, bis sie abgeschlossen ist.
+2. Die „Verwaltung“ ausklappen und auf „Einrichtung“ klicken, dann warten,
+   bis sie abgeschlossen ist.
 3. Die Zugangsdaten eintragen:
    - IServ-Adresse und Benutzername des dafür vorgesehenen SBA-Kontos
    - IServ-Passwort
@@ -60,7 +64,7 @@ erklärt auch den ersten Browser-Aufruf und die Zertifikat-Warnung.
 Wenn die jährliche Excel-Bestandsliste genutzt werden soll:
 
 1. Den Tab „Bestandsliste“ öffnen.
-2. Auf „Einrichtung“ klicken.
+2. Die „Verwaltung“ ausklappen und auf „Einrichtung“ klicken.
 3. Warten, bis die Einrichtung abgeschlossen ist.
 
 Die Bestandsliste kann unabhängig vom Ausleihe-Tab eingerichtet werden. Die
@@ -72,7 +76,7 @@ Der Tab „Barcode-Scanner“ ist für den eigenständigen Scanner. Er muss nur
 eingerichtet werden, wenn dieser Ablauf im SBA-Team verwendet werden soll:
 
 1. Tab „Barcode-Scanner“ öffnen.
-2. „Einrichtung“ klicken.
+2. Die „Verwaltung“ ausklappen und auf „Einrichtung“ klicken.
 3. Warten, bis sie abgeschlossen ist.
 
 ## 3. Bücherstapel bearbeiten
@@ -80,7 +84,8 @@ eingerichtet werden, wenn dieser Ablauf im SBA-Team verwendet werden soll:
 Das ist der normale Ablauf während der Ausgabe:
 
 1. Laptop mit dem Schul-WLAN verbinden und Drucker einschalten.
-2. Im Tab „Ausleihe & Ausgabe“ auf „Ausleihe starten“ klicken.
+2. Im Tab „Ausleihe & Ausgabe“ auf „Ausleihe starten“ klicken. Die Status-Leiste
+   oben zeigt, ob das Werkzeug bereit ist oder läuft.
 3. „Arbeitsfenster öffnen“ klicken und mit dem Passwort für das
    Arbeitsfenster anmelden.
 4. Das richtige Schuljahr und die richtige Klasse auswählen.
@@ -111,7 +116,9 @@ schreibt niemals Daten zurück nach IServ.
 
 ### Buchkatalog
 
-Der Buchkatalog ordnet Fach, Jahrgang und Buchnummer einander zu.
+Der Buchkatalog ordnet Fach, Jahrgang und Buchnummer einander zu. Er ist
+eingeklappt unter „Buchkatalog · für Sonderfälle“; technische Einstellungen
+liegen weiter eingeklappt unter „Verwaltung“.
 
 - „Bücher aus Excel übernehmen“ liest eine vorhandene Excel in den Katalog.
 - „Neue Excel aus Katalog“ erstellt eine neue Excel aus der mitgelieferten
@@ -119,7 +126,7 @@ Der Buchkatalog ordnet Fach, Jahrgang und Buchnummer einander zu.
 - „Hinzufügen“ und „Bearbeiten“ ändern eine Buch-Zuordnung.
 - „Entfernen“ entfernt eine Zuordnung zunächst nur im Fenster.
 - „Katalog speichern“ speichert die Änderungen dauerhaft.
-- „Änderungen verwerfen / neu laden“ lädt den zuletzt gespeicherten Stand.
+- „Verwerfen / neu laden“ lädt den zuletzt gespeicherten Stand.
 - „Zuordnungen übernehmen“ wird nur verwendet, wenn die Bestandsprüfung eine
   Zuordnung ausdrücklich braucht.
 

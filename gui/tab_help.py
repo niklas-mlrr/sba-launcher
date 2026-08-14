@@ -40,10 +40,13 @@ _SECTIONS: tuple[tuple[str, str], ...] = (
         "Einmalige Einrichtung",
         "Am einfachsten im Tab „Start“ auf „Ersteinrichtung starten“ klicken — "
         "der Assistent führt Schritt für Schritt durch alles Nötige. "
-        "Alternativ von Hand:\n"
-        "1. Im Tab „Ausleihe & Ausgabe“ auf „Einrichtung“ klicken und warten, "
-        "bis die Meldung „fertig“ erscheint. Das kann beim ersten Mal einige "
-        "Minuten dauern.\n"
+        "Alternativ von Hand in den Tabs: die Status-Leiste oben sagt, was fehlt, "
+        "und hat oft schon den passenden Knopf dabei. Einrichtung und "
+        "Aktualisierung liegen eingeklappt unter „Verwaltung · nur bei der "
+        "Einrichtung / selten“.\n"
+        "1. Im Tab „Ausleihe & Ausgabe“ die „Verwaltung“ ausklappen und auf "
+        "„Einrichtung“ klicken, dann warten, bis die Meldung „fertig“ erscheint. "
+        "Das kann beim ersten Mal einige Minuten dauern.\n"
         "2. Die vier Zugangsdaten eintragen und „Zugangsdaten speichern“ "
         "klicken. Das IServ-Passwort wird nicht im Protokoll angezeigt.\n"
         "3. Nur wenn die Bestandsliste gebraucht wird: im Tab "
@@ -72,10 +75,12 @@ _SECTIONS: tuple[tuple[str, str], ...] = (
         "unverändert.\n"
         "3. Den Bericht prüfen. Erst wenn Fächer, Jahrgänge und Zahlen plausibel "
         "sind, „Excel aktualisieren“ klicken. Die alte Datei wird vorher gesichert.\n\n"
-        "Der Buchkatalog darunter ist eine lokale Zuordnung von Fach, Jahrgang "
-        "und Buchnummer (ISBN). Ein Mehrjahresband ist ein Buch, das für mehrere "
-        "Jahrgänge gilt. Änderungen erst vornehmen, wenn klar ist, welche "
-        "Buchnummer gemeint ist; danach „Katalog speichern“ klicken.",
+        "Der Buchkatalog (eingeklappt unter „Buchkatalog · für Sonderfälle“) "
+        "ist eine lokale Zuordnung von Fach, Jahrgang und Buchnummer (ISBN). Ein "
+        "Mehrjahresband ist ein Buch, das für mehrere Jahrgänge gilt. Änderungen "
+        "erst vornehmen, wenn klar ist, welche Buchnummer gemeint ist; danach "
+        "„Katalog speichern“ klicken. Technische Einstellungen liegen weiter "
+        "eingeklappt unter „Verwaltung“.",
     ),
     (
         "Wichtige Sicherheitsregel für Buchungen",

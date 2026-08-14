@@ -127,6 +127,7 @@ DISPLAY_LABEL = "Display.TLabel"
 HEADING_LABEL = "Heading.TLabel"
 SUBHEADING_LABEL = "Subheading.TLabel"
 MUTED_LABEL = "Muted.TLabel"
+EYEBROW_LABEL = "Eyebrow.TLabel"  # kurzer, ehrlicher Zonen-Name (VERWALTUNG/PROTOKOLL)
 
 
 def _platform_family() -> str | None:
@@ -220,6 +221,9 @@ def _configure_styles(style: ttk.Style, root: tk.Tk) -> None:
     style.configure(HEADING_LABEL, font=HEADING, background=BG, foreground=TEXT)
     style.configure(SUBHEADING_LABEL, font=SUBHEADING, background=BG, foreground=TEXT)
     style.configure(MUTED_LABEL, font=CAPTION, foreground=TEXT_MUTED, background=BG)
+    # Eyebrow: kurzer Zonen-Name. Tk kann kein Letter-Spacing — Großschreibung
+    # + CAPTION + fett + gedeckt ist das web-„eyebrow"-Äquivalent (§15 Typo).
+    style.configure(EYEBROW_LABEL, font=CAPTION, foreground=TEXT_MUTED, background=BG)
 
     # Notebook-Tabs: aktiver Tab = Surface, inaktive = Seite.
     style.configure("TNotebook", background=BG, borderwidth=0, tabmargins=(0, SP_SM, 0, 0))

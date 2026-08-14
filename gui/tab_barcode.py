@@ -4,7 +4,15 @@ Zwei-Prozess-Stack: Node-Server + Python-Client, je ein
 :class:`~core.process.SubprocessManager`. Aktionen: Installieren, Updaten,
 Starten (async — wartet auf ``session.json``), Stoppen. LogView streamt beide
 Prozesse (Server-Stdout enthält das ASCII-QR + die ``Scanner URL:``-Zeile);
-:class:`~gui.qrview.QrView` rendert die geparste URL als grafischen QR.
+:class:`gui.qrview.QrView` rendert die geparste URL als grafischen QR.
+
+Phase 8 — Layout wie der Ausleihe-Tab (Apple-Design, Tkinter-übersetzt):
+1. **Status-Leiste** (``StatusBar``) — Zustand + nächste Aktion auf einen Blick.
+2. **Bedienung** — ein zustandsabhängiger Haupt-Knopf: nichts los →
+   „Scanner starten” (blau); läuft → „Scanner beenden” (rot, gleiche Stelle).
+3. **Verwaltung** (eingeklappt) — Einrichtung/Aktualisieren, bewusst sekundär.
+4. **Protokoll** (links, ``Eyebrow``) + **QR-Code** (rechts, ``QrView``) — der
+   QR ist das tägliche *Ergebnis*, kein Log; er bleibt prominent.
 
 Dünne GUI-Regel: Install/Update/Start laufen in Hintergrund-Threads; deren
 ``log``-Callback hängt Zeilen thread-safe via ``after(0, …)`` ins LogView. Die
@@ -24,11 +32,18 @@ import tkinter as tk
 from tkinter import ttk
 
 from core import barcode as bc
-from core import gitops
+from core import status as status_mod
 from core.process import SubprocessManager
 from gui import theme
 from gui.qrview import QrView
-from gui.widgets import Banner, BusyBar, LogView, add_tooltip
+from gui.widgets import (
+    BusyBar,
+    CollapsibleSection,
+    Eyebrow,
+    LogView,
+    StatusBar,
+    add_tooltip,
+)
 
 
 class BarcodeTab(ttk.Frame):
@@ -47,7 +62,7 @@ class BarcodeTab(ttk.Frame):
     # --- Aufbau ------------------------------------------------------------
 
     def _build(self) -> None:
-        # Kopf: Titel + Einordnung (statt Banner-als-erstes).
+        # Kopf: Titel + Einordnung.
         header = ttk.Frame(self)
         header.pack(fill="x", padx=theme.SP_LG, pady=(theme.SP_LG, theme.SP_SM))
         ttk.Label(header, text="Barcode-Scanner", style=theme.HEADING_LABEL).pack(anchor="w")
@@ -59,35 +74,68 @@ class BarcodeTab(ttk.Frame):
             justify="left",
         ).pack(anchor="w", pady=(theme.SP_XS, 0))
 
-        # Hauptaktions-Karte: tägliche Start/Beenden-Knöpfe.
-        primary = ttk.LabelFrame(
-            self, text="Bedienung", style=theme.CARD_FRAME
-        )
+        # Status-Leiste: primäre Rückmeldung — Zustand + nächste Aktion.
+        self._status = StatusBar(self)
+        self._status.pack(fill="x", padx=theme.SP_LG, pady=(0, theme.SP_SM))
+
+        # Busy-Bar (nur während langer Aktionen sichtbar).
+        self._busy_bar = BusyBar(self)
+        self._busy_bar.pack(fill="x", padx=theme.SP_LG)
+
+        # Bedienung: der eine, zustandsabhängige Haupt-Knopf.
+        primary = ttk.LabelFrame(self, text="Bedienung", style=theme.CARD_FRAME)
         primary.pack(fill="x", padx=theme.SP_LG, pady=theme.SP_SM)
         prow = ttk.Frame(primary, style="Card.TFrame")
         prow.pack(fill="x", padx=theme.SP_MD, pady=theme.SP_MD)
-        self._btn_start = ttk.Button(
+        self._btn_primary = ttk.Button(
             prow, text="Scanner starten", style=theme.PRIMARY_BUTTON, command=self.on_start
         )
-        self._btn_start.pack(side="left", padx=(0, theme.SP_SM))
+        self._btn_primary.pack(side="left", padx=(0, theme.SP_SM))
         add_tooltip(
-            self._btn_start,
+            self._btn_primary,
             "Startet den Scanner. Danach den angezeigten QR-Code mit dem Handy lesen.",
         )
-        self._btn_stop = ttk.Button(
-            prow, text="Scanner beenden", command=self.on_stop
-        )
-        self._btn_stop.pack(side="left", padx=theme.SP_SM)
-        add_tooltip(self._btn_stop, "Beendet den Barcode-Scanner.")
 
-        # Sekundäre Werkzeugleiste: seltene, einmalige Aktionen.
-        secondary = ttk.Frame(self)
-        secondary.pack(fill="x", padx=theme.SP_LG, pady=(0, theme.SP_SM))
-        ttk.Label(
-            secondary, text="Einmalig / selten:", style=theme.MUTED_LABEL
-        ).pack(side="left", padx=(0, theme.SP_SM))
+        # Verwaltung: seltene / einmalige Aktionen — eingeklappt.
+        self._verwaltung = CollapsibleSection(
+            self, title="Verwaltung · nur bei der Einrichtung / selten", expanded=False
+        )
+        self._verwaltung.pack(fill="x", padx=theme.SP_LG, pady=(0, theme.SP_SM))
+        self._build_verwaltung(self._verwaltung.body)
+
+        # Mitte: Protokoll (links, sekundär) + QR-Code (rechts, tägliches Ergebnis).
+        mid = ttk.Frame(self)
+        mid.pack(fill="both", expand=True, padx=theme.SP_LG, pady=(0, theme.SP_LG))
+
+        log_col = ttk.Frame(mid)
+        log_col.pack(side="left", fill="both", expand=True)
+        Eyebrow(log_col, text="Protokoll · für die Fehlersuche").pack(
+            anchor="w", pady=(0, theme.SP_XS)
+        )
+        self._log = LogView(log_col, height=14)
+        self._log.pack(fill="both", expand=True)
+
+        qr_col = ttk.Frame(mid)
+        qr_col.pack(side="right", fill="y", padx=(theme.SP_SM, 0))
+        Eyebrow(qr_col, text="QR-Code").pack(anchor="w", pady=(0, theme.SP_XS))
+        self._qr = QrView(qr_col)
+        self._qr.pack(fill="y", expand=True)
+
+        self._log.append(
+            "Bereit. Bei der ersten Nutzung „Einrichtung” klicken (in der Verwaltung "
+            "oder über die Status-Leiste), danach „Scanner starten”."
+        )
+        self._log.append(
+            "Nach dem Start erscheint der QR-Code rechts. Mit dem Handy scannen; "
+            "bei Bedarf die ausführliche Anleitung in der Hilfe öffnen."
+        )
+
+    def _build_verwaltung(self, parent: tk.Widget) -> None:
+        """Einrichtung/Aktualisieren im eingeklappten Bereich."""
+        actions = ttk.Frame(parent)
+        actions.pack(fill="x", pady=(0, theme.SP_XS))
         self._btn_install = ttk.Button(
-            secondary, text="Einrichtung", style=theme.SECONDARY_BUTTON, command=self.on_install
+            actions, text="Einrichtung", style=theme.SECONDARY_BUTTON, command=self.on_install
         )
         self._btn_install.pack(side="left", padx=(0, theme.SP_SM))
         add_tooltip(
@@ -95,32 +143,13 @@ class BarcodeTab(ttk.Frame):
             "Einmalig: richtet den eigenständigen Barcode-Scanner auf diesem Laptop ein.",
         )
         self._btn_update = ttk.Button(
-            secondary, text="Aktualisieren", style=theme.SECONDARY_BUTTON, command=self.on_update
+            actions, text="Aktualisieren", style=theme.SECONDARY_BUTTON, command=self.on_update
         )
         self._btn_update.pack(side="left")
         add_tooltip(self._btn_update, "Holt eine neue Version des Barcode-Scanners.")
-
-        # Status-Banner + Busy-Bar.
-        self._banner = Banner(self, "")
-        self._banner.pack(fill="x", padx=theme.SP_LG, pady=(0, theme.SP_SM))
-        self._busy_bar = BusyBar(self)
-        self._busy_bar.pack(fill="x", padx=theme.SP_LG)
-
-        # Mitte: Log (Server+Client) links, QR rechts.
-        mid = ttk.Frame(self)
-        mid.pack(fill="both", expand=True, padx=theme.SP_LG, pady=theme.SP_SM)
-        self._log = LogView(mid, height=18)
-        self._log.pack(side="left", fill="both", expand=True)
-        self._qr = QrView(mid)
-        self._qr.pack(side="right", fill="y", padx=(theme.SP_SM, 0))
-        self._log.append(
-            "Bereit. Bei der ersten Nutzung „Einrichtung“ klicken, danach "
-            "„Scanner starten“."
-        )
-        self._log.append(
-            "Nach dem Start erscheint der QR-Code rechts. Mit dem Handy scannen; "
-            "bei Bedarf die ausführliche Anleitung in der Hilfe öffnen."
-        )
+        ttk.Label(
+            parent, text="Einmalig / selten — im Alltag nicht nötig.", style=theme.MUTED_LABEL
+        ).pack(anchor="w", pady=(0, theme.SP_MD))
 
     # --- Aktionen ----------------------------------------------------------
 
@@ -157,10 +186,10 @@ class BarcodeTab(ttk.Frame):
                 self.after(0, lambda: self._log.append(msg, kind="error"))
                 self.after(
                     0,
-                    lambda: self._banner.set_text(
-                        "Start fehlgeschlagen. Wenn das nicht klappt: USB-Handscanner "
-                        "verwenden.",
+                    lambda: self._status.set(
                         "error",
+                        "Start fehlgeschlagen",
+                        "Wenn das nicht klappt: USB-Handscanner verwenden.",
                     ),
                 )
             finally:
@@ -205,14 +234,16 @@ class BarcodeTab(ttk.Frame):
 
     def _begin_busy(self, label: str) -> None:
         self._busy = True
-        for b in (self._btn_install, self._btn_update, self._btn_start, self._btn_stop):
+        for b in (self._btn_install, self._btn_update, self._btn_primary):
             b.state(["disabled"])
         self._busy_bar.start(f"{label} läuft …")
-        self._banner.set_text(f"{label} läuft …", "warning")
+        self._status.set(
+            "warning", f"{label} läuft", "Bitte warten — das kann einen Moment dauern."
+        )
 
     def _end_busy(self) -> None:
         self._busy = False
-        for b in (self._btn_install, self._btn_update, self._btn_start, self._btn_stop):
+        for b in (self._btn_install, self._btn_update):
             b.state(["!disabled"])
         self._busy_bar.stop()
         self._refresh_status()
@@ -242,18 +273,57 @@ class BarcodeTab(ttk.Frame):
         return self._server_mgr.is_running() or self._client_mgr.is_running()
 
     def _refresh_status(self) -> None:
-        """Zeigt den verständlichen Einrichtungs- und Laufstatus als Banner."""
-        st = gitops.status("barcode-simple")
+        """Setzt Status-Leiste + zustandsabhängigen Haupt-Knopf neu.
+
+        Nutzt :func:`core.status.barcode_status` als einzige Quelle (Repo +
+        Node + Client-Venv), statt die Abfragen im GUI zu streuen.
+        """
         running = self._server_mgr.is_running() or self._client_mgr.is_running()
-        if running:
-            self._banner.set_text("Scanner läuft. QR-Code mit dem Handy scannen.", "success")
+        st = status_mod.barcode_status(running=running)
+        if st.running:
+            self._btn_primary.configure(
+                text="Scanner beenden", style=theme.DANGER_BUTTON, command=self.on_stop
+            )
+            self._btn_primary.state(["!disabled"])
+            self._status.set(
+                "success",
+                "Scanner läuft",
+                "QR-Code mit dem Handy scannen. Nach dem Einsatz „Scanner beenden”.",
+                action_text="Scanner beenden",
+                action_cmd=self.on_stop,
+                action_style=theme.DANGER_BUTTON,
+            )
+        elif st.ready:
+            self._btn_primary.configure(
+                text="Scanner starten", style=theme.PRIMARY_BUTTON, command=self.on_start
+            )
+            self._btn_primary.state(["!disabled"])
+            self._status.set(
+                "info", "Bereit", "Auf „Scanner starten” klicken, danach den QR-Code scannen."
+            )
         elif st.installed:
-            self._banner.set_text(
-                "Scanner eingerichtet und beendet. Bereit für „Scanner starten“.", "info"
+            self._btn_primary.configure(
+                text="Scanner starten", style=theme.PRIMARY_BUTTON, command=self.on_start
+            )
+            self._btn_primary.state(["disabled"])
+            detail = st.detail[0].upper() + st.detail[1:] if st.detail else "Wird vorbereitet"
+            self._status.set(
+                "warning",
+                "Fast bereit",
+                detail + " — einen Moment warten oder die Einrichtung wiederholen.",
             )
         else:
-            self._banner.set_text(
-                "Noch nicht eingerichtet. Zuerst „Einrichtung“ klicken.", "warning"
+            self._btn_primary.configure(
+                text="Scanner starten", style=theme.PRIMARY_BUTTON, command=self.on_start
+            )
+            self._btn_primary.state(["disabled"])
+            self._status.set(
+                "warning",
+                "Noch nicht eingerichtet",
+                "Einrichtung lädt den eigenständigen Scanner (einmalig).",
+                action_text="Einrichtung starten",
+                action_cmd=self.on_install,
+                action_style=theme.SECONDARY_BUTTON,
             )
 
 
