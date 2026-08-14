@@ -33,7 +33,8 @@ from tkinter import filedialog, messagebox, ttk
 
 from core import bestand as bst
 from core import catalog, config_io, gitops, paths
-from gui.widgets import LogView, add_tooltip
+from gui import theme
+from gui.widgets import Banner, BusyBar, CollapsibleSection, LogView, add_tooltip, confirm_action
 
 # Fenster-Titel für filedialog (Windows-orientiert, spielt auf POSIX keine Rolle).
 _EXCEL_FILETYPES = [("Excel-Dateien", "*.xlsx"), ("Alle Dateien", "*.*")]
@@ -69,35 +70,55 @@ class BestandTab(ttk.Frame):
     # --- Aufbau ------------------------------------------------------------
 
     def _build(self) -> None:
-        # Oben: Installieren/Updaten + Status.
+        # Kopf: verständliche Status-Ampel statt grauem Fließtext.
+        self._banner = Banner(
+            self,
+            "Jahres-Excel auswählen, dann immer zuerst „Erst prüfen (nichts ändern)“ "
+            "verwenden.",
+        )
+        self._banner.pack(fill="x", padx=12, pady=(12, 8))
+
+        # Aktions-Leiste: Prüfen (Primary/sicher) und Aktualisieren (Danger/
+        # überschreibt die Datei) sind die Hauptaktionen; Einrichtung/
+        # Aktualisieren der Bestandslisten-Hilfe sind seltene, sekundäre Aktionen.
         top = ttk.Frame(self)
-        top.pack(fill="x", padx=12, pady=(12, 4))
-        self._btn_install = ttk.Button(top, text="Einrichtung", command=self.on_install)
-        self._btn_install.pack(side="left", padx=(0, 4))
-        add_tooltip(
-            self._btn_install,
-            "Einmalig: richtet die jährliche Bestandsliste auf diesem Laptop ein.",
-        )
-        self._btn_update = ttk.Button(top, text="Aktualisieren", command=self.on_update)
-        self._btn_update.pack(side="left", padx=4)
-        add_tooltip(self._btn_update, "Holt eine neue Version der Bestandslisten-Hilfe.")
-        ttk.Separator(top, orient="vertical").pack(side="left", fill="y", padx=8)
+        top.pack(fill="x", padx=12, pady=(0, 4))
         self._btn_dryrun = ttk.Button(
-            top, text="Erst prüfen (nichts ändern)", command=self.on_dry_run
+            top,
+            text="Erst prüfen (nichts ändern)",
+            style=theme.PRIMARY_BUTTON,
+            command=self.on_dry_run,
         )
-        self._btn_dryrun.pack(side="left", padx=4)
+        self._btn_dryrun.pack(side="left", padx=(0, 4))
         add_tooltip(
             self._btn_dryrun,
             "Liest IServ und zeigt einen Bericht. Die Excel-Datei bleibt unverändert.",
         )
-        self._btn_real = ttk.Button(top, text="Excel aktualisieren", command=self.on_real_run)
+        self._btn_real = ttk.Button(
+            top, text="Excel aktualisieren", style=theme.DANGER_BUTTON, command=self.on_real_run
+        )
         self._btn_real.pack(side="left", padx=4)
         add_tooltip(
             self._btn_real,
             "Überträgt die geprüften Zahlen in die Excel-Datei. Zuerst immer prüfen.",
         )
-        self._status = ttk.Label(top, text="…")
-        self._status.pack(side="right")
+        ttk.Separator(top, orient="vertical").pack(side="left", fill="y", padx=8)
+        self._btn_install = ttk.Button(
+            top, text="Einrichtung", style=theme.SECONDARY_BUTTON, command=self.on_install
+        )
+        self._btn_install.pack(side="left", padx=4)
+        add_tooltip(
+            self._btn_install,
+            "Einmalig: richtet die jährliche Bestandsliste auf diesem Laptop ein.",
+        )
+        self._btn_update = ttk.Button(
+            top, text="Aktualisieren", style=theme.SECONDARY_BUTTON, command=self.on_update
+        )
+        self._btn_update.pack(side="left", padx=4)
+        add_tooltip(self._btn_update, "Holt eine neue Version der Bestandslisten-Hilfe.")
+
+        self._busy_bar = BusyBar(self)
+        self._busy_bar.pack(fill="x", padx=12)
 
         # Excel-Auswahlzeile.
         excel_row = ttk.Frame(self)
@@ -119,7 +140,9 @@ class BestandTab(ttk.Frame):
         mid.pack(fill="both", expand=True, padx=12, pady=4)
 
         # ── Katalog-Editor (Treeview) ──────────────────────────────────────
-        kat = ttk.LabelFrame(mid, text="Buchkatalog (Fach und Jahrgang → Buchnummer)")
+        kat = ttk.LabelFrame(
+            mid, text="Buchkatalog (Fach und Jahrgang → Buchnummer)", style=theme.CARD_FRAME
+        )
         kat.pack(fill="both", expand=True, pady=(0, 4))
 
         tree_row = ttk.Frame(kat)
@@ -170,14 +193,22 @@ class BestandTab(ttk.Frame):
             "Übernimmt die Katalog-Zuordnungen für die Bestandsprüfung.",
         )
 
-        # Technischer Fallback für seltene Sonderfälle.
-        cfg = ttk.LabelFrame(mid, text="Zusätzliche Einstellungen (normalerweise nicht ändern)")
+        # ── Erweitert (eingeklappt): seltene, technische Sonderfälle. ──────
+        # Raw-JSON-Sonder-Zuordnungen + Schuljahr-Override sind produktions-
+        # wirksame Konfiguration (match_overrides) — bewusst nicht im
+        # Hauptbereich, damit sie nicht "aus Versehen ohne Rücksprache"
+        # geändert werden.
+        adv = CollapsibleSection(mid, title="Erweitert (nur nach Rücksprache)")
+        adv.pack(fill="x", pady=(0, 4))
+        cfg = ttk.LabelFrame(
+            adv.body, text="Zusätzliche Einstellungen", style=theme.CARD_FRAME
+        )
         cfg.pack(fill="x", pady=(0, 4))
         ttk.Label(
             cfg,
             text="Diese Felder brauchst du im normalen Jahresablauf nicht. Bei Unsicherheit "
             "nichts ändern und die verantwortliche Person fragen.",
-            foreground="#666666",
+            style=theme.MUTED_LABEL,
             wraplength=860,
             justify="left",
         ).pack(anchor="w", padx=8, pady=(6, 0))
@@ -226,17 +257,17 @@ class BestandTab(ttk.Frame):
             "Lädt die zuletzt gespeicherten zusätzlichen Einstellungen.",
         )
 
-        # Schuljahr (optional, frei gelassen = aktuelles).
-        sy_row = ttk.Frame(mid)
+        # Schuljahr (optional, frei gelassen = aktuelles) — ebenfalls "Erweitert".
+        sy_row = ttk.Frame(adv.body)
         sy_row.pack(fill="x", pady=(0, 4))
         ttk.Label(
             sy_row, text="Schuljahr (nur falls nötig):", width=28, anchor="w"
         ).pack(side="left")
         self._schoolyear_var = tk.StringVar()
         ttk.Entry(sy_row, textvariable=self._schoolyear_var, width=14).pack(side="left")
-        ttk.Label(sy_row, text='z. B. "2025/2026"; leer = aktuelles', foreground="#888").pack(
-            side="left", padx=8
-        )
+        ttk.Label(
+            sy_row, text='z. B. "2025/2026"; leer = aktuelles', style=theme.MUTED_LABEL
+        ).pack(side="left", padx=8)
 
         # Report-Log (unten, füllt den Rest).
         self._log = LogView(mid, height=16)
@@ -287,7 +318,7 @@ class BestandTab(ttk.Frame):
                 f"Die Einstellungen konnten nicht gespeichert werden: {e}",
             )
             return
-        self._log.append("Zusätzliche Einstellungen gespeichert.")
+        self._log.append("Zusätzliche Einstellungen gespeichert.", kind="success")
 
     # --- Katalog-Editor -----------------------------------------------------
 
@@ -336,7 +367,7 @@ class BestandTab(ttk.Frame):
             )
             return
         self._log.append(
-            f"Buchkatalog gespeichert ({len(self._katalog.eintraege)} Einträge)."
+            f"Buchkatalog gespeichert ({len(self._katalog.eintraege)} Einträge).", kind="success"
         )
 
     def on_katalog_import(self) -> None:
@@ -457,9 +488,24 @@ class BestandTab(ttk.Frame):
         if not sel:
             return
         eid = sel[0]
+        eintrag = next((e for e in self._katalog.eintraege if e.id == eid), None)
+        label = (
+            f"{eintrag.fach} Jg.{eintrag.jahrgang_von}-{eintrag.jahrgang_bis}"
+            if eintrag
+            else eid
+        )
+        if not confirm_action(
+            self,
+            "Buch-Zuordnung entfernen?",
+            f"„{label}“ wird aus dem Katalog entfernt (erst dauerhaft nach "
+            "„Katalog speichern“).",
+        ):
+            return
         self._katalog.eintraege = [e for e in self._katalog.eintraege if e.id != eid]
         self._populate_tree()
-        self._log.append("Buch-Zuordnung entfernt. Danach „Katalog speichern“ klicken.")
+        self._log.append(
+            "Buch-Zuordnung entfernt. Danach „Katalog speichern“ klicken.", kind="warning"
+        )
 
     def _edit_dialog(self, eintrag: catalog.Eintrag | None = None) -> catalog.Eintrag | None:
         """Modal-Dialog zum Anlegen/Bearbeiten eines Eintrags; None bei Abbruch."""
@@ -565,12 +611,12 @@ class BestandTab(ttk.Frame):
         self._run_run(dry_run=True)
 
     def on_real_run(self) -> None:
-        ok = messagebox.askyesno(
+        ok = confirm_action(
+            self,
             "Excel aktualisieren?",
             "Die ausgewählte Excel-Datei wird mit den neuen Zahlen überschrieben. "
             "Die bisherige Datei wird vorher als Sicherungskopie abgelegt.\n\n"
             "Hast du den Prüfbericht angesehen und sind die Zahlen plausibel?",
-            icon="warning",
         )
         if not ok:
             return
@@ -597,17 +643,26 @@ class BestandTab(ttk.Frame):
                 )
                 tag = "Prüfung" if dry_run else "Excel-Aktualisierung"
                 if rc == 0:
-                    self.after(0, lambda: self._log.append(f"{tag} abgeschlossen."))
+                    self.after(0, lambda: self._log.append(f"{tag} abgeschlossen.", kind="success"))
                 else:
                     self.after(
                         0,
                         lambda: self._log.append(
-                            f"{tag} beendet. Bitte den Bericht und die Fehlermeldung prüfen."
+                            f"{tag} beendet. Bitte den Bericht und die Fehlermeldung prüfen.",
+                            kind="error",
+                        ),
+                    )
+                    self.after(
+                        0,
+                        lambda: self._banner.set_text(
+                            f"{tag} beendet — Bericht prüfen. Bei Unklarheit: "
+                            "USB-Handscanner und offizielles IServ-Frontend nutzen.",
+                            "error",
                         ),
                     )
             except Exception as e:  # noqa: BLE001
                 msg = f"{label} nicht abgeschlossen: {e}"
-                self.after(0, lambda: self._log.append(msg))
+                self.after(0, lambda: self._log.append(msg, kind="error"))
             finally:
                 self.after(0, self._end_busy)
 
@@ -625,10 +680,10 @@ class BestandTab(ttk.Frame):
         def worker() -> None:
             try:
                 fn(log)
-                self.after(0, lambda: self._log.append(f"{label} abgeschlossen."))
+                self.after(0, lambda: self._log.append(f"{label} abgeschlossen.", kind="success"))
             except Exception as e:  # noqa: BLE001
                 msg = f"{label} nicht abgeschlossen: {e}"
-                self.after(0, lambda: self._log.append(msg))
+                self.after(0, lambda: self._log.append(msg, kind="error"))
             finally:
                 self.after(0, self._end_busy)
 
@@ -641,12 +696,14 @@ class BestandTab(ttk.Frame):
         self._busy = True
         for b in (self._btn_install, self._btn_update, self._btn_dryrun, self._btn_real):
             b.state(["disabled"])
-        self._status.configure(text=f"{label} …")
+        self._busy_bar.start()
+        self._banner.set_text(f"{label} läuft …", "warning")
 
     def _end_busy(self) -> None:
         self._busy = False
         for b in (self._btn_install, self._btn_update, self._btn_dryrun, self._btn_real):
             b.state(["!disabled"])
+        self._busy_bar.stop()
         self._refresh_status()
 
     # --- Status ------------------------------------------------------------
@@ -654,11 +711,18 @@ class BestandTab(ttk.Frame):
     def _refresh_status(self) -> None:
         """Zeigt verständlich, ob die Bestandsliste eingerichtet ist."""
         st = gitops.status("ausleihe-api")
-        parts = [
-            "Bestandsliste eingerichtet" if st.installed else "Einrichtung fehlt",
-            "Bereit" if bst.bestand_venv_python().is_file() else "noch nicht bereit",
-        ]
-        self._status.configure(text="  |  ".join(parts))
+        ready = bst.bestand_venv_python().is_file()
+        if not st.installed:
+            self._banner.set_text(
+                "Noch nicht eingerichtet. Zuerst „Einrichtung“ klicken.", "warning"
+            )
+        elif not ready:
+            self._banner.set_text("Bestandsliste wird noch vorbereitet.", "warning")
+        else:
+            self._banner.set_text(
+                "Bereit. Jahres-Excel auswählen und immer zuerst „Erst prüfen“ verwenden.",
+                "success",
+            )
 
 
 def build(parent: tk.Widget) -> BestandTab:

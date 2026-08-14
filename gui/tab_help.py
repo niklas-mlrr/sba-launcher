@@ -15,16 +15,21 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 
 from core import paths
+from gui import theme
 
 _SECTIONS: tuple[tuple[str, str], ...] = (
     (
         "Willkommen",
-        "Du brauchst keine Programmierkenntnisse. In den drei Arbeits-Tabs "
-        "startest du die Werkzeuge mit den großen Schaltflächen. Lies bei der "
-        "ersten Nutzung zuerst den Abschnitt „Einmalige Einrichtung“.",
+        "Du brauchst keine Programmierkenntnisse. Der Tab „Start“ zeigt dir auf "
+        "einen Blick, welches Werkzeug schon eingerichtet ist, und öffnet mit "
+        "„Ersteinrichtung starten“ einen geführten Assistenten für den ersten "
+        "Laptop. In den drei Arbeits-Tabs startest du die Werkzeuge danach mit "
+        "den großen Schaltflächen.",
     ),
     (
         "Welcher Tab ist richtig?",
+        "Start: Übersicht, ob alles eingerichtet ist, plus Ersteinrichtungs-"
+        "Assistent. "
         "Ausleihe & Ausgabe: Bücherstapel für eine Klasse bearbeiten. "
         "Bestandsliste: die jährliche Excel-Datei aus IServ aktualisieren und "
         "sehen, welche Bücher nachbestellt werden müssen. "
@@ -33,6 +38,9 @@ _SECTIONS: tuple[tuple[str, str], ...] = (
     ),
     (
         "Einmalige Einrichtung",
+        "Am einfachsten im Tab „Start“ auf „Ersteinrichtung starten“ klicken — "
+        "der Assistent führt Schritt für Schritt durch alles Nötige. "
+        "Alternativ von Hand:\n"
         "1. Im Tab „Ausleihe & Ausgabe“ auf „Einrichtung“ klicken und warten, "
         "bis die Meldung „fertig“ erscheint. Das kann beim ersten Mal einige "
         "Minuten dauern.\n"
@@ -121,7 +129,7 @@ class HelpTab(ttk.Frame):
         ttk.Label(
             top,
             text="Kurzhilfe für das SBA-Team",
-            font=("TkDefaultFont", 14, "bold"),
+            style=theme.HEADING_LABEL,
         ).pack(anchor="w")
         ttk.Label(
             top,
@@ -136,20 +144,22 @@ class HelpTab(ttk.Frame):
         ttk.Button(
             links,
             text="Ausführliche Anleitung öffnen",
+            style=theme.SECONDARY_BUTTON,
             command=lambda: self._open_document(_documentation_paths()[0]),
         ).pack(side="left", padx=(0, 6))
         ttk.Button(
             links,
             text="PDF-Anleitung öffnen",
+            style=theme.SECONDARY_BUTTON,
             command=lambda: self._open_document(_documentation_paths()[1]),
         ).pack(side="left")
         ttk.Label(
             top,
             text="Die ausführliche Anleitung liegt im Ordner des Hauptwerkzeugs.",
-            foreground="#666666",
+            style=theme.MUTED_LABEL,
         ).pack(anchor="w", pady=(5, 0))
 
-        body = ttk.Frame(self)
+        body = ttk.LabelFrame(self, style=theme.CARD_FRAME)
         body.pack(fill="both", expand=True, padx=14, pady=(0, 14))
         scroll = ttk.Scrollbar(body, orient="vertical")
         self._text = tk.Text(
@@ -161,6 +171,8 @@ class HelpTab(ttk.Frame):
             padx=12,
             pady=8,
             cursor="arrow",
+            background=theme.SURFACE,
+            foreground=theme.TEXT,
         )
         self._text.configure(yscrollcommand=scroll.set)
         scroll.configure(command=self._text.yview)
@@ -168,9 +180,9 @@ class HelpTab(ttk.Frame):
         scroll.pack(side="right", fill="y")
 
         self._text.tag_configure(
-            "heading", font=("TkDefaultFont", 11, "bold"), spacing1=10
+            "heading", font=("TkDefaultFont", 11, "bold"), spacing1=10, foreground=theme.ACCENT
         )
-        self._text.tag_configure("body", spacing1=2, spacing3=6)
+        self._text.tag_configure("body", spacing1=2, spacing3=6, foreground=theme.TEXT)
         self._text.configure(state="normal")
         for heading, content in _SECTIONS:
             self._text.insert("end", heading + "\n", "heading")

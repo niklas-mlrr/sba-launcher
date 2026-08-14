@@ -26,8 +26,9 @@ from tkinter import ttk
 from core import barcode as bc
 from core import gitops
 from core.process import SubprocessManager
+from gui import theme
 from gui.qrview import QrView
-from gui.widgets import LogView, add_tooltip
+from gui.widgets import Banner, BusyBar, LogView, add_tooltip
 
 
 class BarcodeTab(ttk.Frame):
@@ -46,20 +47,19 @@ class BarcodeTab(ttk.Frame):
     # --- Aufbau ------------------------------------------------------------
 
     def _build(self) -> None:
-        top = ttk.Frame(self)
-        top.pack(fill="x", padx=12, pady=(12, 4))
-        self._btn_install = ttk.Button(top, text="Einrichtung", command=self.on_install)
-        self._btn_install.pack(side="left", padx=(0, 4))
-        add_tooltip(
-            self._btn_install,
-            "Einmalig: richtet den eigenständigen Barcode-Scanner auf diesem Laptop ein.",
+        self._banner = Banner(
+            self,
+            "Der QR-Code rechts wird nach dem Start mit dem Handy gescannt. Eine "
+            "Zertifikat-Warnung am Handy ist beim ersten Öffnen erwartet.",
         )
-        self._btn_update = ttk.Button(top, text="Aktualisieren", command=self.on_update)
-        self._btn_update.pack(side="left", padx=4)
-        add_tooltip(self._btn_update, "Holt eine neue Version des Barcode-Scanners.")
-        ttk.Separator(top, orient="vertical").pack(side="left", fill="y", padx=8)
-        self._btn_start = ttk.Button(top, text="Scanner starten", command=self.on_start)
-        self._btn_start.pack(side="left", padx=4)
+        self._banner.pack(fill="x", padx=12, pady=(12, 8))
+
+        top = ttk.Frame(self)
+        top.pack(fill="x", padx=12, pady=(0, 4))
+        self._btn_start = ttk.Button(
+            top, text="Scanner starten", style=theme.PRIMARY_BUTTON, command=self.on_start
+        )
+        self._btn_start.pack(side="left", padx=(0, 4))
         add_tooltip(
             self._btn_start,
             "Startet den Scanner. Danach den angezeigten QR-Code mit dem Handy lesen.",
@@ -67,17 +67,23 @@ class BarcodeTab(ttk.Frame):
         self._btn_stop = ttk.Button(top, text="Scanner beenden", command=self.on_stop)
         self._btn_stop.pack(side="left", padx=4)
         add_tooltip(self._btn_stop, "Beendet den Barcode-Scanner.")
+        ttk.Separator(top, orient="vertical").pack(side="left", fill="y", padx=8)
+        self._btn_install = ttk.Button(
+            top, text="Einrichtung", style=theme.SECONDARY_BUTTON, command=self.on_install
+        )
+        self._btn_install.pack(side="left", padx=4)
+        add_tooltip(
+            self._btn_install,
+            "Einmalig: richtet den eigenständigen Barcode-Scanner auf diesem Laptop ein.",
+        )
+        self._btn_update = ttk.Button(
+            top, text="Aktualisieren", style=theme.SECONDARY_BUTTON, command=self.on_update
+        )
+        self._btn_update.pack(side="left", padx=4)
+        add_tooltip(self._btn_update, "Holt eine neue Version des Barcode-Scanners.")
 
-        self._status = ttk.Label(top, text="…")
-        self._status.pack(side="right")
-        ttk.Label(
-            self,
-            text="Der QR-Code rechts wird nach dem Start mit dem Handy gescannt. "
-            "Eine Zertifikat-Warnung am Handy ist beim ersten Öffnen erwartet.",
-            foreground="#555555",
-            wraplength=860,
-            justify="left",
-        ).pack(anchor="w", padx=12, pady=(0, 4))
+        self._busy_bar = BusyBar(self)
+        self._busy_bar.pack(fill="x", padx=12)
 
         # Mitte: Log (Server+Client) links, QR rechts.
         mid = ttk.Frame(self)
@@ -121,11 +127,21 @@ class BarcodeTab(ttk.Frame):
                 bc.start(self._server_mgr, self._client_mgr, log)
                 self.after(
                     0,
-                    lambda: self._log.append("Scanner gestartet. QR-Code mit dem Handy scannen."),
+                    lambda: self._log.append(
+                        "Scanner gestartet. QR-Code mit dem Handy scannen.", kind="success"
+                    ),
                 )
             except Exception as e:  # noqa: BLE001 — GUI fängt alles und loggt
                 msg = f"Scanner konnte nicht gestartet werden: {e}"
-                self.after(0, lambda: self._log.append(msg))
+                self.after(0, lambda: self._log.append(msg, kind="error"))
+                self.after(
+                    0,
+                    lambda: self._banner.set_text(
+                        "Start fehlgeschlagen. Wenn das nicht klappt: USB-Handscanner "
+                        "verwenden.",
+                        "error",
+                    ),
+                )
             finally:
                 self.after(0, self._end_busy)
 
@@ -139,9 +155,7 @@ class BarcodeTab(ttk.Frame):
         bc.stop(
             self._server_mgr, self._client_mgr, log=lambda line: self._log.append(line)
         )
-        self._log.append(
-            "Barcode-Scanner beendet."
-        )
+        self._log.append("Barcode-Scanner beendet.", kind="success")
         self._qr.clear()
         self._refresh_status()
 
@@ -158,10 +172,10 @@ class BarcodeTab(ttk.Frame):
         def worker() -> None:
             try:
                 fn(log)
-                self.after(0, lambda: self._log.append(f"{label} abgeschlossen."))
+                self.after(0, lambda: self._log.append(f"{label} abgeschlossen.", kind="success"))
             except Exception as e:  # noqa: BLE001
                 msg = f"{label} nicht abgeschlossen: {e}"
-                self.after(0, lambda: self._log.append(msg))
+                self.after(0, lambda: self._log.append(msg, kind="error"))
             finally:
                 self.after(0, self._end_busy)
 
@@ -172,12 +186,14 @@ class BarcodeTab(ttk.Frame):
         self._busy = True
         for b in (self._btn_install, self._btn_update, self._btn_start, self._btn_stop):
             b.state(["disabled"])
-        self._status.configure(text=f"{label} …")
+        self._busy_bar.start()
+        self._banner.set_text(f"{label} läuft …", "warning")
 
     def _end_busy(self) -> None:
         self._busy = False
         for b in (self._btn_install, self._btn_update, self._btn_start, self._btn_stop):
             b.state(["!disabled"])
+        self._busy_bar.stop()
         self._refresh_status()
 
     # --- Stream-Poll (beide Manager + URL-Erkennung) ----------------------
@@ -200,15 +216,24 @@ class BarcodeTab(ttk.Frame):
 
     # --- Status ------------------------------------------------------------
 
+    def is_running(self) -> bool:
+        """Für das Start-Dashboard (``gui/tab_home.py``): läuft Server/Client?"""
+        return self._server_mgr.is_running() or self._client_mgr.is_running()
+
     def _refresh_status(self) -> None:
-        """Zeigt den verständlichen Einrichtungs- und Laufstatus."""
+        """Zeigt den verständlichen Einrichtungs- und Laufstatus als Banner."""
         st = gitops.status("barcode-simple")
-        parts = ["Scanner eingerichtet" if st.installed else "Einrichtung fehlt"]
-        if self._server_mgr.is_running():
-            parts.append("Scanner läuft")
-        if not (self._server_mgr.is_running() or self._client_mgr.is_running()):
-            parts.append("Scanner beendet")
-        self._status.configure(text="  |  ".join(parts))
+        running = self._server_mgr.is_running() or self._client_mgr.is_running()
+        if running:
+            self._banner.set_text("Scanner läuft. QR-Code mit dem Handy scannen.", "success")
+        elif st.installed:
+            self._banner.set_text(
+                "Scanner eingerichtet und beendet. Bereit für „Scanner starten“.", "info"
+            )
+        else:
+            self._banner.set_text(
+                "Noch nicht eingerichtet. Zuerst „Einrichtung“ klicken.", "warning"
+            )
 
 
 def build(parent: tk.Widget) -> BarcodeTab:

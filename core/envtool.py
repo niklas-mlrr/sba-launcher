@@ -30,6 +30,16 @@ ENV_FORM_KEYS: tuple[str, ...] = (
     "HOST_PASSWORD",
 )
 
+# (key, deutsches Label, maskiert) — einzige Quelle für die GUI-Form
+# (``gui/tab_ausleihe.py`` + der Ersteinrichtungs-Assistent ``gui/setup_wizard.py``
+# teilen sich diese Definition, statt sie zu duplizieren).
+FORM_FIELDS: tuple[tuple[str, str, bool], ...] = (
+    ("ISERV_DOMAIN", "IServ-Adresse", False),
+    ("ISERV_USERNAME", "IServ-Benutzername", False),
+    ("ISERV_PASSWORD", "IServ-Passwort", True),
+    ("HOST_PASSWORD", "Passwort fürs Arbeitsfenster", True),
+)
+
 # Welche Schlüssel in welche Repo-.env gehören.
 # HOST_PASSWORD ist ein Host-Konzept von ausleihe-ausgabe; ausleihe-api kennt es nicht.
 REPO_KEYS: dict[str, tuple[str, ...]] = {

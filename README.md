@@ -6,8 +6,11 @@ nicht programmieren und keine technischen Vorkenntnisse haben.
 
 Die wichtigsten Regeln:
 
-- Im Alltag werden die großen Schaltflächen im Launcher verwendet.
-- Bei der ersten Nutzung zuerst „Einrichtung“ ausführen.
+- Der Tab „Start“ zeigt auf einen Blick, was schon eingerichtet ist, und
+  öffnet mit „Ersteinrichtung starten“ einen geführten Assistenten.
+- Im Alltag werden die großen, blauen Schaltflächen in den Tabs verwendet.
+- Ein rot markierter Knopf (z. B. „Excel aktualisieren“) verändert Daten —
+  hier lohnt sich ein zweiter Blick, bevor bestätigt wird.
 - Bei der Bestandsliste immer zuerst „Erst prüfen (nichts ändern)“ anklicken.
 - Wenn etwas nicht funktioniert, ist der USB-Handscanner im offiziellen
   IServ-Ausleihe-Frontend der dauerhafte Notnagel.
@@ -28,6 +31,12 @@ wird nur für die Einrichtung oder eine Aktualisierung benötigt.
 ## 2. Einmalige Einrichtung
 
 Die Einrichtung muss normalerweise nur einmal pro Laptop gemacht werden.
+
+Am einfachsten im Tab „Start“ auf „Ersteinrichtung starten“ klicken — der
+Assistent führt nacheinander durch Ausleihe & Ausgabe, Zugangsdaten,
+Bestandsliste (optional) und Barcode-Scanner (optional). Jeder Schritt lässt
+sich überspringen und später im jeweiligen Tab nachholen. Alternativ können
+die folgenden Schritte auch einzeln in den Tabs ausgeführt werden.
 
 ### Ausleihe & Ausgabe
 
