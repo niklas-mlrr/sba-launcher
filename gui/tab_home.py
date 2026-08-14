@@ -173,7 +173,7 @@ class HomeTab(ttk.Frame):
         headline.pack(side="left", fill="x", expand=True, padx=(0, theme.SP_SM))
 
         # Nächster Schritt — eine Zeile plain-language, was im Tab ansteht.
-        next_step = tk.Label(
+        next_step = ttk.Label(
             inner, text="", style=theme.CARD_MUTED_LABEL, wraplength=260,
             justify="left", anchor="w",
         )
