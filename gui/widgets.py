@@ -275,9 +275,9 @@ class CollapsibleSection(ttk.Frame):
         self._glyph = tk.Label(
             header, text="▾" if expanded else "▸", font=theme.BODY_BOLD,
             background=theme.BG, foreground=theme.TEXT_MUTED, cursor="hand2",
-            padx=(0, theme.SP_XS),
+            padx=0,
         )
-        self._glyph.pack(side="left")
+        self._glyph.pack(side="left", padx=(0, theme.SP_XS))
         self._header_label = tk.Label(
             header, text=title, font=theme.SUBHEADING, background=theme.BG,
             foreground=theme.TEXT, cursor="hand2", anchor="w",
