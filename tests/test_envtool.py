@@ -57,7 +57,9 @@ def test_parse_letzte_wert_gewinnt():
 
 
 def test_mask_value_vollstaendig():
-    assert envtool.mask_value("geheim") == "•••••" or len(envtool.mask_value("geheim")) >= 4
+    result = envtool.mask_value("geheim")
+    assert result == "•" * 8
+    assert "g" not in result
 
 
 def test_mask_value_leer_bleibt_leer():
@@ -69,6 +71,10 @@ def test_masked_verdeckt_sensible_schluessel():
     assert out["ISERV_DOMAIN"] == "schule.de"
     assert out["ISERV_PASSWORD"] != "s3cr3t"
     assert "•" in out["ISERV_PASSWORD"]
+    # Symmetrisch: auch HOST_PASSWORD wird maskiert.
+    out2 = envtool.masked({"HOST_PASSWORD": "hostpw"})
+    assert out2["HOST_PASSWORD"] != "hostpw"
+    assert "•" in out2["HOST_PASSWORD"]
 
 
 def test_masked_laesst_unsensible_durch():
@@ -191,7 +197,10 @@ def test_write_form_leerer_wert_setzt_leer_nicht_loescht(fake_repos):
     )
     aa = envtool.read_env(paths.env_file("ausleihe-ausgabe"))
     assert aa["ISERV_PASSWORD"] == ""
-    assert "ISERV_PASSWORD=" in paths.env_file("ausleihe-ausgabe").read_text(encoding="utf-8")
+    assert aa["HOST_PASSWORD"] == ""
+    text = paths.env_file("ausleihe-ausgabe").read_text(encoding="utf-8")
+    assert "ISERV_PASSWORD=" in text
+    assert "HOST_PASSWORD=" in text
 
 
 # --- Produktionsschutz: sensible Werte tauchen nicht im Output auf -------
@@ -206,3 +215,41 @@ def test_kein_klartextpasswort_in_datei_ausserhalb_der_wert_zeile(fake_repos):
         secret_lines = [ln for ln in lines if "TOPSECRET" in ln or "ALSOSECRET" in ln]
         allowed = ("ISERV_PASSWORD", "HOST_PASSWORD")
         assert all(ln.split("=", 1)[0] in allowed for ln in secret_lines)
+
+
+# --- is_ready ---------------------------------------------------------------
+
+
+def test_is_ready_false_wenn_datei_fehlt(fake_repos) -> None:
+    assert envtool.is_ready("ausleihe-ausgabe") is False
+    assert envtool.is_ready("ausleihe-api") is False
+
+
+def test_is_ready_false_bei_leeren_werten(fake_repos) -> None:
+    envtool.write_env(paths.env_file("ausleihe-ausgabe"), {"ISERV_DOMAIN": ""})
+    assert envtool.is_ready("ausleihe-ausgabe") is False
+
+
+def test_is_ready_true_ausleihe_ausgabe_mit_allen_keys(fake_repos) -> None:
+    envtool.write_env(
+        paths.env_file("ausleihe-ausgabe"),
+        {
+            "ISERV_DOMAIN": "d",
+            "ISERV_USERNAME": "u",
+            "ISERV_PASSWORD": "p",
+            "HOST_PASSWORD": "h",
+        },
+    )
+    assert envtool.is_ready("ausleihe-ausgabe") is True
+
+
+def test_is_ready_true_ausleihe_api_mit_drei_keys(fake_repos) -> None:
+    envtool.write_env(
+        paths.env_file("ausleihe-api"),
+        {"ISERV_DOMAIN": "d", "ISERV_USERNAME": "u", "ISERV_PASSWORD": "p"},
+    )
+    assert envtool.is_ready("ausleihe-api") is True
+
+
+def test_is_ready_false_fuer_unbekanntes_repo(fake_repos) -> None:
+    assert envtool.is_ready("unbekannt") is False

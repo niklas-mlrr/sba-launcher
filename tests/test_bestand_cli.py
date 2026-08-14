@@ -140,11 +140,17 @@ def test_run_auto_baut_kommando_mit_venv_python(fake_bestand_repo: Path, monkeyp
 
 def test_run_auto_real_ohne_dry_run_flag(fake_bestand_repo: Path, monkeypatch) -> None:
     _seed_skript_venv_env(fake_bestand_repo)
-    monkeypatch.setattr(bst, "run_streaming", lambda *a, **k: 0)
-    bst.run_auto(dry_run=False, excel=Path("/x.xlsx"), log=lambda _l: None)
-    # Keine Exception, kein --dry-run im Kommando (via build_cmd schon getestet);
-    # hier wird nur sichergestellt, dass der Real-Pfad ohne Bestätigung im Core
-    # läuft (die Bestätigung ist GUI-only).
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, log=None, cwd=None, env=None, timeout=600.0, shell=False):
+        captured.append(cmd)
+        return 0
+
+    monkeypatch.setattr(bst, "run_streaming", fake_run)
+    rc = bst.run_auto(dry_run=False, excel=Path("/x.xlsx"), log=lambda _l: None)
+    assert rc == 0
+    assert len(captured) == 1
+    assert "--dry-run" not in captured[0]
 
 
 def test_run_auto_streamt_log(fake_bestand_repo: Path, monkeypatch) -> None:
@@ -219,3 +225,29 @@ def test_run_auto_hebt_wenn_env_fehlt(fake_bestand_repo: Path, monkeypatch) -> N
     venv_py.write_text("# fake", encoding="utf-8")
     with pytest.raises(FileNotFoundError, match=r"\.env fehlt"):
         bst.run_auto(dry_run=True, log=lambda _l: None)
+
+
+# --- install: Kommando als Liste (kein shell=True) -------------------------
+
+
+def test_install_reicht_kommandos_als_liste(fake_bestand_repo: Path, monkeypatch) -> None:
+    """install() reicht run_streaming-Kommandos als Liste (kein shell=True)."""
+    captured: list[dict] = []
+
+    def fake_run(cmd, log=None, cwd=None, env=None, timeout=600.0, shell=False):
+        captured.append({"cmd": cmd, "shell": shell})
+        return 0
+
+    monkeypatch.setattr(bst, "run_streaming", fake_run)
+    bst.install(log=lambda _l: None)
+    # uv venv + uv pip install.
+    assert len(captured) >= 2
+    for call in captured:
+        assert isinstance(call["cmd"], list)
+        assert call["shell"] is False
+    pip_calls = [c for c in captured if "pip" in c["cmd"]]
+    assert pip_calls
+    assert pip_calls[0]["cmd"][0] == "uv"
+    assert "install" in pip_calls[0]["cmd"]
+    assert "-e" in pip_calls[0]["cmd"]
+    assert f".[{bst.BESTAND_EXTRA}]" in pip_calls[0]["cmd"]

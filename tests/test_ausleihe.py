@@ -94,3 +94,62 @@ def test_venv_is_stale_ohne_console_scripts(tmp_path: Path) -> None:
     (venv / "bin").mkdir(parents=True)
     (venv / "bin" / "python3").write_text("")  # nur der Interpreter, kein Script
     assert aa._venv_is_stale(venv) is False
+
+
+def test_venv_is_stale_windows_pfad_nicht_existiert(tmp_path: Path) -> None:
+    # Console-Script mit Windows-Pfad (…\.venv\Scripts\python.exe), der auf
+    # POSIX nicht existiert → stale True (Regex erkennt Windows-Pfad-Muster).
+    venv = tmp_path / ".venv"
+    (venv / "bin").mkdir(parents=True)
+    win_path = r"C:\old\project\.venv\Scripts\python.exe"
+    (venv / "bin" / "playwright").write_text(
+        f"#!/bin/sh\n'exec' '{win_path}' '-c' '' \"$@\"\n", encoding="utf-8"
+    )
+    assert aa._venv_is_stale(venv) is True
+
+
+# --- start_server Vorbedingungen -------------------------------------------
+
+
+class _FakeManager:
+    """SubprocessManager-Stub: zeichnet start auf, ohne echte Prozesse."""
+
+    def __init__(self) -> None:
+        self.started: list[tuple[list[str], Path | None, dict | None]] = []
+
+    def start(
+        self, cmd: list[str], cwd: Path | None = None, env: dict | None = None
+    ) -> None:
+        self.started.append((cmd, cwd, env))
+
+
+def test_start_server_hebt_wenn_repo_fehlt(tmp_path: Path, monkeypatch) -> None:
+    launcher = tmp_path / "sba-launcher"
+    launcher.mkdir()
+    monkeypatch.setattr(paths, "launcher_root", lambda: launcher)
+    with pytest.raises(FileNotFoundError, match="nicht installiert"):
+        aa.start_server(_FakeManager())
+
+
+def test_start_server_hebt_wenn_env_fehlt(fake_aa_repo: Path) -> None:
+    # Repo da (fake_aa_repo legt .git an), aber keine .env.
+    with pytest.raises(FileNotFoundError, match=r"\.env fehlt"):
+        aa.start_server(_FakeManager())
+
+
+def test_start_server_startet_kommando(fake_aa_repo: Path) -> None:
+    envtool.write_env(
+        paths.env_file("ausleihe-ausgabe"),
+        {
+            "ISERV_DOMAIN": "d",
+            "ISERV_USERNAME": "u",
+            "ISERV_PASSWORD": "p",
+            "HOST_PASSWORD": "h",
+        },
+    )
+    mgr = _FakeManager()
+    aa.start_server(mgr)
+    assert len(mgr.started) == 1
+    cmd, cwd, _ = mgr.started[0]
+    assert cmd == ["uv", "run", "python", "-m", aa.SERVER_MODULE]
+    assert cwd.resolve() == fake_aa_repo.resolve()

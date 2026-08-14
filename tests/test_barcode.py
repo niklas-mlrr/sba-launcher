@@ -280,3 +280,29 @@ def test_konstanten_konsistent() -> None:
     assert Path("server/runtime/session.json") == bc.SESSION_REL
     assert Path(".venv-client") == bc.CLIENT_VENV_DIR
     assert bc.SESSION_TIMEOUT_S > 0
+
+
+# --- install: Kommando als Liste (kein shell=True) -------------------------
+
+
+def test_install_reicht_kommandos_als_liste(fake_barcode_repo: Path, monkeypatch) -> None:
+    """install() reicht run_streaming-Kommandos als Liste (kein shell=True)."""
+    captured: list[dict] = []
+
+    def fake_run(cmd, log=None, cwd=None, env=None, timeout=600.0, shell=False):
+        captured.append({"cmd": cmd, "shell": shell})
+        return 0
+
+    monkeypatch.setattr(bc, "run_streaming", fake_run)
+    monkeypatch.setattr(bc.prereqs, "ensure_node", lambda log=None: "node ok")
+    monkeypatch.setattr(bc.prereqs, "npm_bin", lambda: "/usr/bin/npm")
+    monkeypatch.setattr(bc.prereqs, "node_env", lambda: None)
+    bc.install(log=lambda _l: None)
+    # npm install + uv venv + uv pip install.
+    assert len(captured) >= 2
+    for call in captured:
+        assert isinstance(call["cmd"], list)
+        assert call["shell"] is False
+    # Erster Aufruf: npm install (List-Form, kein shell=True).
+    assert captured[0]["cmd"][0] == "/usr/bin/npm"
+    assert captured[0]["cmd"][1] == "install"

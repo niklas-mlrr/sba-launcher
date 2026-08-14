@@ -234,3 +234,24 @@ def test_render_unmatched(tmp_path: Path) -> None:
     # Die drei zuordenbaren Einträge landen dennoch in den mappings.
     cfg = json.loads((out.parent / "config.json").read_text(encoding="utf-8"))
     assert len([m for m in cfg["mappings"]]) == 3
+
+
+# --- load_katalog Fehlertoleranz / atomarer Write --------------------------
+
+
+def test_load_katalog_corrupt_json_liefert_leer(tmp_path: Path) -> None:
+    p = tmp_path / "katalog.json"
+    p.write_text("{kein gültiges json", encoding="utf-8")
+    k = catalog.load_katalog(p)
+    assert k.schule == ""
+    assert k.schuljahr == ""
+    assert k.eintraege == []
+
+
+def test_save_katalog_hinterlässt_keine_tmp_datei(tmp_path: Path) -> None:
+    k = catalog.Katalog(schule="TRG", schuljahr="2026/2027")
+    p = tmp_path / "katalog.json"
+    catalog.save_katalog(k, p)
+    assert p.is_file()
+    # Atomarer Write via tmp+rename → keine Temp-Datei übrig.
+    assert not list(tmp_path.glob("*.json.tmp"))

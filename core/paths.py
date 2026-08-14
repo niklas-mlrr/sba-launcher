@@ -45,7 +45,7 @@ def sibling(name: str) -> Path:
     """
     if name not in SIBLING_REPOS:
         raise ValueError(f"unbekanntes Geschwister-Repo: {name!r}")
-    return launcher_root() / ".." / name
+    return (launcher_root() / ".." / name).resolve()
 
 
 def exists(name: str) -> bool:

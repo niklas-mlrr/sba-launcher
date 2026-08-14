@@ -111,9 +111,9 @@ def test_is_dirty_true_nach_aenderung(umbrella: Path, tmp_path: Path) -> None:
 def test_pull_up_to_date(umbrella: Path, tmp_path: Path) -> None:
     remote = _make_remote(tmp_path)
     gitops.clone("ausleihe-ausgabe", url=str(remote))
-    out = gitops.pull("ausleihe-ausgabe")
-    # --ff-only auf aktuellem Stand → "Already up to date." oder leer.
-    assert "Already up to date" in out or out == ""
+    gitops.pull("ausleihe-ausgabe")
+    # --ff-only auf aktuellem Stand → keine Änderung, Repo bleibt clean.
+    assert gitops.is_dirty("ausleihe-ausgabe") is False
 
 
 def test_pull_hebt_wenn_nicht_installiert(umbrella: Path) -> None:
@@ -132,10 +132,9 @@ def test_pull_holt_neuen_commit(umbrella: Path, tmp_path: Path) -> None:
     _git(["commit", "-m", "zwei"], work)
     _git(["push", "origin", "main"], work)
 
-    out = gitops.pull("ausleihe-ausgabe")
+    gitops.pull("ausleihe-ausgabe")
     geholt = (paths.sibling("ausleihe-ausgabe") / "neu.txt").read_text(encoding="utf-8")
     assert geholt.strip() == "neu"
-    assert "Updating" in out or "Fast-forward" in out or out == ""
 
 
 # --- current_branch / REPO_URLS -------------------------------------------
@@ -154,3 +153,22 @@ def test_repo_urls_abgedeckt_und_https() -> None:
     for name in paths.SIBLING_REPOS:
         assert name in gitops.REPO_URLS
         assert gitops.REPO_URLS[name].startswith("https://github.com/")
+
+
+# --- clone-Fehler / broken .git -------------------------------------------
+
+
+def test_clone_fehlschlag_hebt_und_räumt_auf(umbrella: Path, tmp_path: Path) -> None:
+    # Ungültige URL → clone scheitert → RuntimeError + Ziel aufgeräumt.
+    with pytest.raises(RuntimeError, match="clone fehlgeschlagen"):
+        gitops.clone("ausleihe-ausgabe", url=str(tmp_path / "nicht-vorhanden.git"))
+    assert not paths.sibling("ausleihe-ausgabe").exists()
+
+
+def test_status_broken_git_liefert_error(umbrella: Path) -> None:
+    # Repo-Verzeichnis mit .git, aber kein gültiges Git-Repo → error gesetzt.
+    repo = paths.sibling("ausleihe-ausgabe")
+    (repo / ".git").mkdir(parents=True)
+    st = gitops.status("ausleihe-ausgabe")
+    assert st.installed
+    assert st.error is not None

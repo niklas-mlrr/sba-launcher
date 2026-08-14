@@ -23,8 +23,8 @@ def test_launcher_root_liegt_im_repo_root():
 
 
 def test_sibling_ist_dotdot_name():
-    """``sibling('ausleihe-ausgabe')`` → ``<root>/../ausleihe-ausgabe`` (raw, un-aufgelöst)."""
-    expected = paths.launcher_root() / ".." / "ausleihe-ausgabe"
+    """``sibling('ausleihe-ausgabe')`` → ``<root>/../ausleihe-ausgabe`` (aufgelöst, ohne ``..``)."""
+    expected = (paths.launcher_root() / ".." / "ausleihe-ausgabe").resolve()
     assert paths.sibling("ausleihe-ausgabe") == expected
 
 
@@ -56,7 +56,7 @@ def test_env_file_ziel(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(paths, "launcher_root", lambda: tmp_path)
     assert paths.env_file("ausleihe-api") == (
         tmp_path / ".." / "ausleihe-api" / ".env"
-    )
+    ).resolve()
 
 
 def test_tools_dir_unter_root():
@@ -75,7 +75,6 @@ def test_templates_dir_unter_root():
     assert paths.templates_dir() == paths.launcher_root() / "templates"
 
 
-def test_as_posix_str_konvertiert_backslashes(monkeypatch, tmp_path: Path):
-    p = tmp_path / "sub" / "file.txt"
-    assert "\\" not in paths.as_posix_str(p)
-    assert "/" in paths.as_posix_str(p)
+def test_as_posix_str_konvertiert_backslashes():
+    # Windows-Stil-Pfad mit Backslashes → Forward-Slashes (für CLI-Args).
+    assert paths.as_posix_str(Path("a\\b\\c.txt")) == "a/b/c.txt"

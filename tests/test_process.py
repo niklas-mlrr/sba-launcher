@@ -12,7 +12,7 @@ import time
 
 import pytest
 
-from core.process import SubprocessManager
+from core.process import SubprocessManager, run_streaming
 
 _PY = [sys.executable, "-u"]
 
@@ -107,3 +107,27 @@ def test_neustart_nach_stop() -> None:
     lines = m.poll_lines()
     assert "zweit" in lines
     assert "erst" not in lines
+
+
+# --- run_streaming (Ein-Schuss-Kommando) -----------------------------------
+
+
+def test_run_streaming_liefert_zeilen_und_rc_0() -> None:
+    """Realer Subprocess: print('hi') → rc 0, Output enthält 'hi', Echo ``$ …``."""
+    logs: list[str] = []
+    rc = run_streaming([*_PY, "-u", "-c", "print('hi')"], log=logs.append)
+    assert rc == 0
+    assert any(ln.startswith("$ ") for ln in logs)
+    assert "hi" in " ".join(logs)
+
+
+def test_run_streaming_timeout_killt_prozess() -> None:
+    """Timeout killt den Prozess und liefert nonzero rc."""
+    logs: list[str] = []
+    rc = run_streaming(
+        [*_PY, "-u", "-c", "import time; time.sleep(30)"],
+        log=logs.append,
+        timeout=0.5,
+    )
+    assert rc != 0
+    assert any("Zeitüberschreitung" in ln for ln in logs)

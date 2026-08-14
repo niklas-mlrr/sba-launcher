@@ -31,6 +31,8 @@ from tkinter import ttk
 
 from core import status as status_mod
 from gui import setup_wizard, theme
+from gui._home_logic import next_step as _next_step
+from gui._home_logic import state_for as _state_for
 
 # Zustand → (Pillen-Hintergrund, Text, Symbol) — gleiche Status-Palette wie
 # gui.widgets._BANNER_STYLES / StatusBar, hier kompakt pro Karte.
@@ -48,32 +50,6 @@ _STATE_HEADLINES: dict[str, str] = {
     "partial": "Fast bereit",
     "missing": "Einrichtung nötig",
 }
-
-
-def _state_for(st: status_mod.ToolStatus) -> str:
-    if st.running:
-        return "running"
-    if st.ready:
-        return "ready"
-    if st.installed:
-        return "partial"
-    return "missing"
-
-
-def _next_step(key: str, state: str, st: status_mod.ToolStatus) -> str:
-    """Plain-language nächster Schritt pro Karte — abgeleitet aus Zustand + Detail.
-
-    ``st.detail`` ist die nicht-technische Quelle („Zugangsdaten fehlen",
-    „wird noch vorbereitet", …) und wird hier zu einem ganzen Satz geformt.
-    """
-    if state == "running":
-        return "Im Tab auf „Beenden“ klicken, wenn der Einsatz vorbei ist."
-    if state == "ready":
-        return "Im Tab auf „Starten“ klicken."
-    if state == "partial":
-        detail = st.detail[0].upper() + st.detail[1:] if st.detail else "Noch nicht bereit"
-        return f"{detail} — im Tab unter „Verwaltung“ ergänzen."
-    return "Unten auf „Einrichten“ klicken (einmalig)."
 
 
 class HomeTab(ttk.Frame):

@@ -19,8 +19,11 @@ from tkinter import messagebox, ttk
 from core import ausleihe_ausgabe as aa
 from core import barcode as bc
 from core import bestand as bst
-from core import envtool, gitops
+from core import envtool
 from gui import theme
+from gui._home_logic import ausleihe_installed as _ausleihe_installed
+from gui._home_logic import barcode_installed as _barcode_installed
+from gui._home_logic import bestand_installed as _bestand_installed
 from gui.widgets import Banner, BusyBar, Eyebrow, FormField, LogView
 
 LogFn = Callable[[str], None]
@@ -42,18 +45,6 @@ class _InstallStep:
         self.run = run
         self.ready_check = ready_check
         self.required = required
-
-
-def _ausleihe_installed() -> bool:
-    return all(gitops.status(name).installed for name in aa.AUSLEIHE_REPOS)
-
-
-def _bestand_installed() -> bool:
-    return gitops.status("ausleihe-api").installed
-
-
-def _barcode_installed() -> bool:
-    return gitops.status("barcode-simple").installed
 
 
 _INSTALL_STEPS: tuple[_InstallStep, ...] = (
