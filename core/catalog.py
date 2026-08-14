@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import shutil
 from dataclasses import dataclass, field
@@ -31,6 +32,9 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.utils import coordinate_to_tuple, get_column_letter
 
 from core import paths
+from core.config_io import _atomic_write_text
+
+_log = logging.getLogger(__name__)
 
 # ── Layout-Primitiven (gespiegelt aus update_bestand_auto.py) ────────────────
 # O5 (2026-08-12): Die reinen Helper werden kopiert statt ``update_bestand_auto``
@@ -96,6 +100,8 @@ def classify_row(ws, row: int) -> str:
         return "zustand"
     if val == "Stand":
         return "stand"
+    # Vorlage führt jede Jahrgang-Zeile einzeln (keine "Jahrgang 11/12"-Combined),
+    # daher passt die einfache ``Jahrgang \d+``-Regex — Rows müssen ein Jahrgang sein.
     if isinstance(val, str) and re.match(r"Jahrgang\s+\d+", val):
         return "jahrgang"
     return "other"
@@ -226,12 +232,24 @@ def katalog_path() -> Path:
 
 
 def load_katalog(path: Path | None = None) -> Katalog:
-    """Lädt den Katalog; leerer Katalog bei fehlender Datei."""
+    """Lädt den Katalog; leerer Katalog bei fehlender Datei.
+
+    Bei kaputtem JSON (z. B. halbfertiger Schreibvorgang) wird ebenfalls ein
+    leerer Katalog zurückgegeben + Warning geloggt — so bleibt die GUI bedienbar,
+    statt beim Start abzustürzen. Strukturfehler (falsche Felder) hingegen werden
+    weitergereicht (KeyError), da sie auf einen echten Datenfehler hindeuten.
+    """
     if path is None:
         path = katalog_path()
     if not path.is_file():
         return Katalog(schule="", schuljahr="")
-    return Katalog.from_json(json.loads(path.read_text(encoding="utf-8")))
+    try:
+        return Katalog.from_json(json.loads(path.read_text(encoding="utf-8")))
+    except json.JSONDecodeError as e:
+        _log.warning(
+            "load_katalog: %s ist kein gültiges JSON (%s) — leerer Katalog.", path, e.msg
+        )
+        return Katalog(schule="", schuljahr="")
 
 
 def save_katalog(katalog: Katalog, path: Path | None = None) -> Path:
@@ -239,9 +257,9 @@ def save_katalog(katalog: Katalog, path: Path | None = None) -> Path:
     if path is None:
         path = katalog_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    _atomic_write_text(
+        path,
         json.dumps(katalog.to_json(), indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
     )
     return path
 
@@ -383,11 +401,24 @@ def catalog_to_overrides(katalog: Katalog) -> dict[str, str]:
     Key-Format wie update_bestand_auto.py: ``f"{grade}|{fach}|{hint or ''}"``.
     Für Mehrjahresbände wird ein Key **pro** Jahrgang im Bereich [von..bis] emittiert
     — so greift der Override auf jeder Jahrgang-Zeile, die das Buch abdeckt.
+
+    Bei überlappenden Einträgen (gleicher Key, unterschiedliche ISBN) gewinnt der
+    letzte Eintrag — die Kollision wird aber geloggt, statt stillschweigend zu
+    überschreiben (früher ein lautloser Datenverlust).
     """
     out: dict[str, str] = {}
     for e in katalog.eintraege:
         for grade in range(e.jahrgang_von, e.jahrgang_bis + 1):
-            out[f"{grade}|{e.fach}|{e.hint or ''}"] = e.isbn
+            key = f"{grade}|{e.fach}|{e.hint or ''}"
+            if key in out and out[key] != e.isbn:
+                _log.warning(
+                    "catalog_to_overrides: Key-Kollision für %r —"
+                    " ISBN %s überschreibt %s (letzter gewinnt).",
+                    key,
+                    e.isbn,
+                    out[key],
+                )
+            out[key] = e.isbn
     return dict(sorted(out.items()))
 
 
@@ -493,8 +524,9 @@ def render_excel(
         "mappings": mappings,
     }
     config_path = out_path.parent / "config.json"
-    config_path.write_text(
-        json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    _atomic_write_text(
+        config_path,
+        json.dumps(config, indent=2, ensure_ascii=False) + "\n",
     )
     return config_path, unmatched
 

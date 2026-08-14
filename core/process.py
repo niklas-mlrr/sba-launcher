@@ -24,6 +24,7 @@ import os
 import queue
 import subprocess
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -62,6 +63,16 @@ class SubprocessManager:
         """
         if self.is_running():
             raise RuntimeError("Prozess läuft bereits — erst stop() aufrufen")
+
+        # Vorherigen Pump-Thread sicher beenden (Race: Prozess beendet, Thread
+        # läuft noch kurz nach). ``_STREAM_END`` ist harter Stopp-Marker —
+        # danach endet der Thread deterministisch.
+        if self._thread is not None and self._thread.is_alive():
+            self._thread.join(timeout=5.0)
+            if self._thread.is_alive():
+                raise RuntimeError(
+                    "vorheriger Pump-Thread lebt noch — stop() nicht abgeschlossen"
+                )
 
         # Reset für einen sauberen Lauf (Queue + Returncode leeren).
         self._drain_queue()
@@ -154,7 +165,13 @@ class SubprocessManager:
                     os.killpg(os.getpgid(proc.pid), 9)  # SIGKILL
                 except (ProcessLookupError, PermissionError):
                     proc.kill()
-            proc.wait(timeout=timeout)
+            try:
+                proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                # Prozess weigert sich zu sterben — bestmögliches Aufräumen,
+                # dann weiterfallen lassen (returncode setzen unten).
+                with contextlib.suppress(ProcessLookupError):
+                    proc.kill()
 
         # Thread laufen lassen, bis _STREAM_END ankommt (kurz).
         if self._thread is not None and self._thread.is_alive():
@@ -182,12 +199,20 @@ class SubprocessManager:
         return lines
 
     def wait_line(self, timeout: float = 1.0) -> str | None:
-        """Blockiert bis zu ``timeout`` s auf die nächste Zeile (für Tests)."""
+        """Blockiert bis zu ``timeout`` s auf die nächste Zeile (für Tests).
+
+        Liefert ``None`` bei Timeout oder wenn der Stream beendet ist
+        (``_STREAM_END``-Sentinel). Der Sentinel wird **nicht konsumiert**,
+        sondern wieder in die Queue gelegt, sodass nachfolgende Consumer
+        (``poll_lines``) ebenfalls erkennen, dass der Stream beendet ist.
+        """
         try:
             item = self._log.get(timeout=timeout)
         except queue.Empty:
             return None
         if item is _STREAM_END:
+            # Sentinel zurücklegen — spätere Consumer sehen ihn auch.
+            self._log.put(_STREAM_END)
             return None
         return item  # type: ignore[return-value]
 
@@ -218,6 +243,28 @@ class SubprocessManager:
 # eine ``log``-Callback gereicht; die GUI hängt sie thread-safe ins LogView.
 
 
+def _kill_process_tree(proc: subprocess.Popen[str]) -> None:
+    """Killt den Prozess-Baum plattformübergreifend; Fallback ``proc.kill()``.
+
+    POSIX: SIGTERM an die Prozess-Gruppe (``start_new_session=True`` beim
+    Start → PGID == PID). Windows: ``taskkill /F /T /PID`` beendet den Baum.
+    ``os.getpgid`` ist gegen ``ProcessLookupError`` abgesichert.
+    """
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+            capture_output=True,
+            timeout=5.0,
+            check=False,
+        )
+    else:
+        try:
+            os.killpg(os.getpgid(proc.pid), 15)  # SIGTERM
+        except (ProcessLookupError, PermissionError):
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+
+
 def run_streaming(
     cmd: list[str] | str,
     log: Callable[[str], None],
@@ -234,6 +281,13 @@ def run_streaming(
     ``shell=True`` (mit ``cmd`` als String) wird für Windows-``.cmd``-Aufrufe
     gebraucht (z. B. ``npm.cmd``); auf POSIX läuft ``npm`` als normales Skript
     und braucht kein Shell.
+
+    Implementierung: ein Reader-Thread pumpt stdout zeilenweise in eine
+    ``queue.Queue``; der Main-Loop pollt mit ``queue.get(timeout=…)`` und
+    killt den Prozess (ganze Gruppe), sobald der harte Deadline
+    (``time.monotonic() + timeout``) überschritten ist. Ein bloßes
+    ``for line in proc.stdout`` würde bis EOF blockieren und den
+    ``wait(timeout=…)``-Aufruf unerreichbar machen.
     """
     log(f"$ {cmd if isinstance(cmd, str) else ' '.join(cmd)}")
     kwargs: dict = {
@@ -245,14 +299,60 @@ def run_streaming(
     }
     if env is not None:
         kwargs["env"] = env
-    proc = subprocess.Popen(cmd, cwd=str(cwd) if cwd else None, **kwargs)
-    assert proc.stdout is not None
-    for line in proc.stdout:
-        log(line.rstrip("\n"))
+    # Neue Prozess-Gruppe (POSIX) / Process-Group (Windows), damit der
+    # ganze Baum gekillt werden kann.
+    if os.name == "posix":
+        kwargs["start_new_session"] = True
+    elif os.name == "nt":
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+
     try:
-        proc.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait()
+        proc = subprocess.Popen(cmd, cwd=str(cwd) if cwd else None, **kwargs)
+    except FileNotFoundError:
+        name = cmd if isinstance(cmd, str) else cmd[0]
+        log(f"[Kommando nicht gefunden: {name}]")
+        return 127
+
+    assert proc.stdout is not None
+    out_q: queue.Queue[str | None] = queue.Queue()
+    _EOF: object = None  # Sentinel für Stream-Ende im Reader-Thread.
+
+    def _reader() -> None:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            out_q.put(line.rstrip("\n"))
+        out_q.put(_EOF)  # type: ignore[arg-type]
+
+    reader = threading.Thread(target=_reader, daemon=True)
+    reader.start()
+
+    deadline = time.monotonic() + timeout
+    timed_out = False
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            timed_out = True
+            break
+        try:
+            line = out_q.get(timeout=remaining)
+        except queue.Empty:
+            timed_out = True
+            break
+        if line is _EOF:
+            break
+        log(line)  # type: ignore[arg-type]
+
+    if timed_out:
+        _kill_process_tree(proc)
         log(f"[Zeitüberschreitung nach {timeout}s — Prozess gekillt]")
-    return proc.returncode
+
+    # Reader-Thread aufräumen (kurz joinen).
+    reader.join(timeout=2.0)
+    # Prozess-Ende sicherstellen (Fallback nach SIGTERM-Group-Kill).
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        proc.wait(timeout=5.0)
+    if proc.poll() is None:
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+        proc.wait()
+    return proc.returncode if proc.returncode is not None else 1

@@ -17,10 +17,12 @@ Produktionsschutz (CLAUDE.md):
 
 from __future__ import annotations
 
+import contextlib
 import re
 from pathlib import Path
 
 from core import paths
+from core.config_io import _atomic_write_text
 
 # Alle Form-Schlüssel (Reihenfolge = Form-Reihenfolge).
 ENV_FORM_KEYS: tuple[str, ...] = (
@@ -68,12 +70,13 @@ _LINE_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$")
 def mask_value(value: str, visible: int = 0) -> str:
     """Maskiert einen Wert vollständig (``visible=0``) oder zeigt ``visible`` Zeichen.
 
-    ``visible=0`` → ``"••••"`` (mindestens 4, Länge-nah). Leer bleibt leer.
+    ``visible=0`` → 8 Bullets fix (unabhängig von der Wertlänge), damit die
+    Maskierung keine Rückschlüsse auf die Passwortlänge erlaubt. Leer bleibt leer.
     """
     if not value:
         return ""
     if visible <= 0:
-        return _MASK * max(4, min(len(value), 16))
+        return _MASK * 8
     if visible >= len(value):
         return value
     return value[:visible] + _MASK * max(2, min(len(value) - visible, 12))
@@ -93,6 +96,12 @@ def parse_env_text(text: str) -> dict[str, str]:
     Kein Quoting-Strip — Werte stehen 1:1 (inkl. eventueller Quotes). Reicht für
     die Form-Schlüssel (Pfade, Passwörter ohne Quotes). Der letzte Wert eines
     Schlüssels gewinnt (Shell-Semantik).
+
+    Sensible Schlüssel (siehe :data:`SENSITIVE_KEYS`) werden **nicht** am
+    Inline-Kommentar `` #`` abgespalten — ein Passwort, das `` #`` enthält,
+    würde sonst verstümmelt. Secrets mit führenden/trailingen Leerzeichen müssen
+    gequotet werden (``KEY="value with #"``), da Quotes hier nicht gestrippt
+    werden (Best-Effort, keine vollständige Shell-Quoting-Engine).
     """
     out: dict[str, str] = {}
     for line in text.splitlines():
@@ -101,9 +110,14 @@ def parse_env_text(text: str) -> dict[str, str]:
             continue
         key, value = m.group(1), m.group(2)
         # Inline-Kommentar nur abheben, wenn ein Whitespace vor ``#`` steht UND
-        # der Wert nicht mit einem Quote beginnt (Best-Effort, keine vollständige
-        # Shell-Quoting-Engine). Für Form-Schlüssel irrelevant.
-        if value and value[0] not in "\"'" and " #" in value:
+        # der Wert nicht mit einem Quote beginnt — außer für sensible Schlüssel
+        # (Passwörter), bei denen `` #`` Teil des Werts sein kann.
+        if (
+            key not in SENSITIVE_KEYS
+            and value
+            and value[0] not in "\"'"
+            and " #" in value
+        ):
             value = value.split(" #", 1)[0].rstrip()
         out[key] = value
     return out
@@ -143,6 +157,10 @@ def write_env(path: Path, updates: dict[str, str]) -> None:
     Existiert die Datei nicht, wird sie neu angelegt (nur die ``updates``-Keys).
     Verzeichnis wird bei Bedarf mit erstellt (z. B. wenn das Repo gerade geklont
     wurde, aber die .env noch fehlt).
+
+    Atomar via Temp-Datei + ``os.replace`` (kein halbfertiger Zustand bei
+    Absturz). Da ``.env`` Passwörter enthält, wird danach ``chmod 0o600``
+    gesetzt (nur Owner-lesbar) — auf Windows/ACL-FS ist das ein No-op.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.is_file():
@@ -154,7 +172,11 @@ def write_env(path: Path, updates: dict[str, str]) -> None:
     text = "\n".join(new_lines)
     if text and not text.endswith("\n"):
         text += "\n"
-    path.write_text(text, encoding="utf-8")
+    _atomic_write_text(path, text)
+    # .env enthält Passwörter → restriktive Permissions (nur Owner). Auf
+    # Windows/ACL- oder Read-only-FS ist chmod nicht anwendbar — no-op.
+    with contextlib.suppress(OSError):
+        path.chmod(0o600)
 
 
 def read_form() -> dict[str, str]:
@@ -210,3 +232,26 @@ def defaults_from_example(repo: str) -> dict[str, str]:
     parsed = parse_env_text(example.read_text(encoding="utf-8"))
     allowed = REPO_KEYS.get(repo, ())
     return {k: parsed.get(k, "") for k in allowed}
+
+
+def is_ready(repo: str = "ausleihe-ausgabe") -> bool:
+    """Prüft, ob ``repo`` startklar ist (``.env`` existiert + alle Keys belegt).
+
+    Genutzt von Wave-2 (``status.py``, ``tab_ausleihe.py``) um zu entscheiden, ob
+    der Tab/Start aktiviert wird. Liefert ``True`` gdw. die ``.env`` für ``repo``
+    existiert **und** jeder in :data:`REPO_KEYS[repo]` gelistete Schlüssel einen
+    nicht-leeren Wert hat (Whitespace-only gilt als leer).
+
+    Für ``ausleihe-ausgabe`` sind das ``ISERV_DOMAIN``, ``ISERV_USERNAME``,
+    ``ISERV_PASSWORD`` und ``HOST_PASSWORD``; für ``ausleihe-api`` entfällt
+    ``HOST_PASSWORD``. Die konkrete Menge ergibt sich aus :data:`REPO_KEYS`
+    (Single Source of Truth) — unbekannte ``repo`` liefern ``False``.
+    """
+    required = REPO_KEYS.get(repo, ())
+    if not required:
+        return False
+    env_path = paths.env_file(repo)
+    if not env_path.is_file():
+        return False
+    values = read_env(env_path)
+    return all(values.get(k, "").strip() != "" for k in required)

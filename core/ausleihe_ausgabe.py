@@ -20,13 +20,13 @@ Der dauerhafte Server nutzt den ``SubprocessManager`` (eigener Stream).
 from __future__ import annotations
 
 import contextlib
+import os
 import re
-import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
 from core import envtool, gitops, paths
-from core.process import SubprocessManager
+from core.process import SubprocessManager, run_streaming
 
 # Kanonische Werte (geeint mit ausleihe-ausgabe/.env.example + start.bat).
 SERVER_MODULE = "server.main"
@@ -49,40 +49,6 @@ SUMATRA_HINT = (
 )
 
 
-def _run_streaming(
-    cmd: list[str],
-    log: LogFn,
-    cwd: Path | None = None,
-    env: dict[str, str] | None = None,
-    timeout: float = 600.0,
-) -> int:
-    """Führt ein Ein-Schuss-Kommando aus, streamt stdout+stderr nach ``log``.
-
-    Liefert den Exit-Code. Kein ``raise`` — Aufrufer prüft auf ``!= 0`` und
-    erzeugt eine klare Fehlermeldung (mit Kommando + Exit-Code).
-    """
-    log(f"$ {' '.join(cmd)}")
-    kwargs: dict = {
-        "stdout": subprocess.PIPE,
-        "stderr": subprocess.STDOUT,
-        "text": True,
-        "bufsize": 1,
-    }
-    if env is not None:
-        kwargs["env"] = env
-    proc = subprocess.Popen(cmd, cwd=str(cwd) if cwd else None, **kwargs)
-    assert proc.stdout is not None
-    for line in proc.stdout:
-        log(line.rstrip("\n"))
-    try:
-        proc.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait()
-        log(f"[Zeitüberschreitung nach {timeout}s — Prozess gekillt]")
-    return proc.returncode
-
-
 # Muster für den absoluten venv-Python-Pfad, den uv in Console-Scripts
 # (``.venv/bin/<tool>``) bei der Erstellung reingebackt hat. uv-venvs sind
 # NICHT relocatable: wird das Projektverzeichnis danach umbenannt/verschoben
@@ -90,7 +56,14 @@ def _run_streaming(
 # Pfade ins Leere — jeder Console-Script-Aufruf (z. B. ``playwright``)
 # scheitert mit Exit 126. ``uv sync`` fällt *nicht* darauf (nutzt den
 # venv-Python direkt per Symlink), daher braucht es eine eigene Prüfung.
-_VENV_PY_REF = re.compile(r"(/[^\s'\"\)]*?/\.venv/bin/python[\w.\-]*)")
+# POSIX: ``/…/.venv/bin/python3.12``; Windows: ``C:\…\.venv\Scripts\python.exe``.
+_VENV_PY_REF = re.compile(
+    r"(?:"
+    r"/[^\s'\"\)]*?/\.venv/bin/python[\w.\-]*"  # POSIX
+    r"|"
+    r"[A-Za-z]:\\[^\s'\"\)]*?\\.venv\\Scripts\\python[\w.\-]*\.exe"  # Windows
+    r")"
+)
 
 
 def _venv_is_stale(venv: Path) -> bool:
@@ -101,7 +74,7 @@ def _venv_is_stale(venv: Path) -> bool:
     aktuellen Ort korrekt funktionierenden venv (kein False-Positive bei
     frischen/aktuellen venvs — deren Referenzpfad existiert ja).
     """
-    bin_dir = venv / "bin"
+    bin_dir = venv / ("Scripts" if os.name == "nt" else "bin")
     if not bin_dir.is_dir():
         return False
     for script in bin_dir.iterdir():
@@ -114,7 +87,7 @@ def _venv_is_stale(venv: Path) -> bool:
         except OSError:
             continue
         m = _VENV_PY_REF.search(head)
-        if m and not Path(m.group(1)).exists():
+        if m and not Path(m.group(0)).exists():
             return True
     return False
 
@@ -160,13 +133,13 @@ def install(log: LogFn) -> None:
     if _venv_is_stale(aa_repo / ".venv"):
         _recreate_venv(aa_repo, log)
     log("[ausleihe-ausgabe] uv sync …")
-    rc = _run_streaming(["uv", "sync"], log=log, cwd=aa_repo)
+    rc = run_streaming(["uv", "sync"], log=log, cwd=aa_repo)
     if rc != 0:
         raise RuntimeError(f"uv sync fehlgeschlagen (Exit {rc})")
 
     # 3. Chromium für den Playwright-Write-Pfad (Buchung via Frontend).
     log("[ausleihe-ausgabe] playwright install chromium …")
-    rc = _run_streaming(
+    rc = run_streaming(
         ["uv", "run", "playwright", "install", "chromium"],
         log=log,
         cwd=paths.sibling("ausleihe-ausgabe"),
@@ -201,7 +174,7 @@ def update(log: LogFn) -> dict[str, gitops.RepoStatus]:
     aa_repo = paths.sibling("ausleihe-ausgabe")
     if _venv_is_stale(aa_repo / ".venv"):
         _recreate_venv(aa_repo, log)
-    rc = _run_streaming(["uv", "sync"], log=log, cwd=aa_repo)
+    rc = run_streaming(["uv", "sync"], log=log, cwd=aa_repo)
     if rc != 0:
         raise RuntimeError(f"uv sync fehlgeschlagen (Exit {rc})")
 

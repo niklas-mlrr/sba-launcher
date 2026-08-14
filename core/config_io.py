@@ -22,6 +22,7 @@ tkinter-frei — auf dem headless VPS via pytest testbar.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -30,6 +31,22 @@ from core import bestand
 # Default-Sicherheitsbestand, falls die config.json (noch) nicht existiert oder
 # keinen Wert angibt — geeint mit update_bestand_auto.py (dort: config.get(…, 5)).
 DEFAULT_SAFETY_STOCK = 5
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Schreibt ``text`` atomar nach ``path`` (Temp-Datei + ``os.replace``).
+
+    Verhindert halbfertige Dateien bei Absturz/Interrupt: erst in eine
+    Temporärdatei ``path.suffix + ".tmp"`` im **selben Verzeichnis** schreiben
+    (gleiche Partition → ``os.replace`` ist atomar), dann umbenennen. Die
+    Temp-Datei erbt die Verzeichnis-Permissions; für .env wird danach separat
+    ``chmod 0o600`` gesetzt (siehe :func:`envtool.write_env`).
+
+    Aufrufer muss das Verzeichnis vorher anlegen (``mkdir(parents=True, …)``).
+    """
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
 
 
 @dataclass
@@ -127,9 +144,9 @@ def write_config(config: BestandConfig, path: Path | None = None) -> Path:
         path = bestand.config_path()
     validate_editable(config.safety_stock, config.match_overrides)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    _atomic_write_text(
+        path,
         json.dumps(config.to_json(), indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
     )
     return path
 
