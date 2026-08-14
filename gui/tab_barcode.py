@@ -47,51 +47,72 @@ class BarcodeTab(ttk.Frame):
     # --- Aufbau ------------------------------------------------------------
 
     def _build(self) -> None:
-        self._banner = Banner(
-            self,
-            "Der QR-Code rechts wird nach dem Start mit dem Handy gescannt. Eine "
-            "Zertifikat-Warnung am Handy ist beim ersten Öffnen erwartet.",
-        )
-        self._banner.pack(fill="x", padx=12, pady=(12, 8))
+        # Kopf: Titel + Einordnung (statt Banner-als-erstes).
+        header = ttk.Frame(self)
+        header.pack(fill="x", padx=theme.SP_LG, pady=(theme.SP_LG, theme.SP_SM))
+        ttk.Label(header, text="Barcode-Scanner", style=theme.HEADING_LABEL).pack(anchor="w")
+        ttk.Label(
+            header,
+            text="Den eigenständigen Scanner starten und den QR-Code mit dem Handy scannen.",
+            style=theme.MUTED_LABEL,
+            wraplength=900,
+            justify="left",
+        ).pack(anchor="w", pady=(theme.SP_XS, 0))
 
-        top = ttk.Frame(self)
-        top.pack(fill="x", padx=12, pady=(0, 4))
-        self._btn_start = ttk.Button(
-            top, text="Scanner starten", style=theme.PRIMARY_BUTTON, command=self.on_start
+        # Hauptaktions-Karte: tägliche Start/Beenden-Knöpfe.
+        primary = ttk.LabelFrame(
+            self, text="Bedienung", style=theme.CARD_FRAME
         )
-        self._btn_start.pack(side="left", padx=(0, 4))
+        primary.pack(fill="x", padx=theme.SP_LG, pady=theme.SP_SM)
+        prow = ttk.Frame(primary, style="Card.TFrame")
+        prow.pack(fill="x", padx=theme.SP_MD, pady=theme.SP_MD)
+        self._btn_start = ttk.Button(
+            prow, text="Scanner starten", style=theme.PRIMARY_BUTTON, command=self.on_start
+        )
+        self._btn_start.pack(side="left", padx=(0, theme.SP_SM))
         add_tooltip(
             self._btn_start,
             "Startet den Scanner. Danach den angezeigten QR-Code mit dem Handy lesen.",
         )
-        self._btn_stop = ttk.Button(top, text="Scanner beenden", command=self.on_stop)
-        self._btn_stop.pack(side="left", padx=4)
-        add_tooltip(self._btn_stop, "Beendet den Barcode-Scanner.")
-        ttk.Separator(top, orient="vertical").pack(side="left", fill="y", padx=8)
-        self._btn_install = ttk.Button(
-            top, text="Einrichtung", style=theme.SECONDARY_BUTTON, command=self.on_install
+        self._btn_stop = ttk.Button(
+            prow, text="Scanner beenden", command=self.on_stop
         )
-        self._btn_install.pack(side="left", padx=4)
+        self._btn_stop.pack(side="left", padx=theme.SP_SM)
+        add_tooltip(self._btn_stop, "Beendet den Barcode-Scanner.")
+
+        # Sekundäre Werkzeugleiste: seltene, einmalige Aktionen.
+        secondary = ttk.Frame(self)
+        secondary.pack(fill="x", padx=theme.SP_LG, pady=(0, theme.SP_SM))
+        ttk.Label(
+            secondary, text="Einmalig / selten:", style=theme.MUTED_LABEL
+        ).pack(side="left", padx=(0, theme.SP_SM))
+        self._btn_install = ttk.Button(
+            secondary, text="Einrichtung", style=theme.SECONDARY_BUTTON, command=self.on_install
+        )
+        self._btn_install.pack(side="left", padx=(0, theme.SP_SM))
         add_tooltip(
             self._btn_install,
             "Einmalig: richtet den eigenständigen Barcode-Scanner auf diesem Laptop ein.",
         )
         self._btn_update = ttk.Button(
-            top, text="Aktualisieren", style=theme.SECONDARY_BUTTON, command=self.on_update
+            secondary, text="Aktualisieren", style=theme.SECONDARY_BUTTON, command=self.on_update
         )
-        self._btn_update.pack(side="left", padx=4)
+        self._btn_update.pack(side="left")
         add_tooltip(self._btn_update, "Holt eine neue Version des Barcode-Scanners.")
 
+        # Status-Banner + Busy-Bar.
+        self._banner = Banner(self, "")
+        self._banner.pack(fill="x", padx=theme.SP_LG, pady=(0, theme.SP_SM))
         self._busy_bar = BusyBar(self)
-        self._busy_bar.pack(fill="x", padx=12)
+        self._busy_bar.pack(fill="x", padx=theme.SP_LG)
 
         # Mitte: Log (Server+Client) links, QR rechts.
         mid = ttk.Frame(self)
-        mid.pack(fill="both", expand=True, padx=12, pady=4)
-        self._log = LogView(mid, height=20)
+        mid.pack(fill="both", expand=True, padx=theme.SP_LG, pady=theme.SP_SM)
+        self._log = LogView(mid, height=18)
         self._log.pack(side="left", fill="both", expand=True)
         self._qr = QrView(mid)
-        self._qr.pack(side="right", fill="y", padx=(8, 0))
+        self._qr.pack(side="right", fill="y", padx=(theme.SP_SM, 0))
         self._log.append(
             "Bereit. Bei der ersten Nutzung „Einrichtung“ klicken, danach "
             "„Scanner starten“."
@@ -186,7 +207,7 @@ class BarcodeTab(ttk.Frame):
         self._busy = True
         for b in (self._btn_install, self._btn_update, self._btn_start, self._btn_stop):
             b.state(["disabled"])
-        self._busy_bar.start()
+        self._busy_bar.start(f"{label} läuft …")
         self._banner.set_text(f"{label} läuft …", "warning")
 
     def _end_busy(self) -> None:

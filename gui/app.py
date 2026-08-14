@@ -23,8 +23,8 @@ TABS: list[tuple[str, str]] = [
 ]
 
 WINDOW_TITLE = "SBA-Launcher – Schulbuchausleihe"
-WINDOW_MIN_W = 860
-WINDOW_MIN_H = 620
+WINDOW_MIN_W = 980
+WINDOW_MIN_H = 680
 
 
 def build_app(root: tk.Tk) -> ttk.Notebook:
@@ -41,7 +41,7 @@ def build_app(root: tk.Tk) -> ttk.Notebook:
     theme.apply(root)
 
     notebook = ttk.Notebook(root)
-    notebook.pack(fill="both", expand=True, padx=8, pady=8)
+    notebook.pack(fill="both", expand=True, padx=theme.SP_SM, pady=theme.SP_SM)
 
     contents: dict[str, tk.Widget] = {}
     indices: dict[str, int] = {}

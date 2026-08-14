@@ -20,6 +20,8 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
+from gui import theme
+
 # Pillow kommt via ``qrcode[pil]`` mit; ImageTk braucht ein Tk-Build von Pillow.
 # Import-Fehler werden zur Laufzeit in set_url abgefangen, nicht beim Modul-Import.
 try:  # pragma: no cover — Import-Verfügbarkeit hängt am Build
@@ -31,7 +33,7 @@ except Exception:  # noqa: BLE001 — Headless/ohne Tk: grafischer QR deaktivier
 
 # Kantenglättung via nächstgelegenen Nachbar beim Hochskalieren — QR bleibt
 # scanbar (kein Blur, das Scanner verwirren würde).
-_QR_BOX = 8  # Module-Größe im QR-Bild (px pro Modul)
+_QR_BOX = 10  # Module-Größe im QR-Bild (px pro Modul) — größer für Handy-Kameras
 _QR_BORDER = 4  # Ruhezone um den QR (Module)
 
 
@@ -47,13 +49,15 @@ class QrView(ttk.Frame):
         self._photo: tk.PhotoImage | None = None  # Referenz halten (GC!)
 
         self._qr_label = ttk.Label(self, anchor="center")
-        self._qr_label.pack(pady=(4, 2))
+        self._qr_label.pack(pady=(theme.SP_XS, theme.SP_XS))
 
         self._url_var = tk.StringVar()
         url_entry = ttk.Entry(self, textvariable=self._url_var, state="readonly", width=52)
-        url_entry.pack(fill="x", padx=4, pady=(2, 4))
-        self._hint = ttk.Label(self, text="", foreground="#888", justify="left", wraplength=460)
-        self._hint.pack(anchor="w", padx=4)
+        url_entry.pack(fill="x", padx=theme.SP_XS, pady=(theme.SP_XS, theme.SP_XS))
+        self._hint = ttk.Label(
+            self, text="", style=theme.MUTED_LABEL, justify="left", wraplength=460
+        )
+        self._hint.pack(anchor="w", padx=theme.SP_XS)
 
         self.clear()
 

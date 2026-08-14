@@ -4,7 +4,10 @@ Aktionen: Installieren, Updaten, Server starten/stopen, Host öffnen, plus
 die zentrale ``.env``-Form (IServ-Zugang + Host-Passwort), die in **beide**
 Geschwister-``.env`` schreibt.
 
-Dünne GUI-Regel: lange Operationen (install/update) laufen in einem
+Phase 7 — Zonen-Neubau: Kopf (Titel + Einordnung) → Hauptaktions-Karte
+(tägliche Start/Öffnen/Beenden-Knöpfe) → sekundäre Werkzeugleiste (seltene
+Einrichtung/Aktualisieren, bewusst kleiner und abgesetzt) → Status-Banner →
+Log → Zugangsdaten-Karte. Lange Operationen (install/update) laufen in einem
 Hintergrund-Thread; deren ``log``-Callback hängt Zeilen thread-safe via
 ``after(0, …)`` ins LogView. Der dauerhafte Server streamt selbst über den
 :class:`~core.process.SubprocessManager` (eigener Thread + Queue).
@@ -48,59 +51,82 @@ class AusleiheTab(ttk.Frame):
     # --- Aufbau ------------------------------------------------------------
 
     def _build(self) -> None:
-        # Kopf: verständliche Status-Ampel statt grauem Fließtext.
-        self._banner = Banner(
-            self,
-            "Bei der ersten Nutzung: Einrichtung → Zugangsdaten eintragen → speichern. "
-            "Danach startet der tägliche Ablauf mit „Ausleihe starten“.",
-        )
-        self._banner.pack(fill="x", padx=12, pady=(12, 8))
+        # Kopf: Titel + Einordnung (statt Banner-als-erstes).
+        header = ttk.Frame(self)
+        header.pack(fill="x", padx=theme.SP_LG, pady=(theme.SP_LG, theme.SP_SM))
+        ttk.Label(header, text="Ausleihe & Ausgabe", style=theme.HEADING_LABEL).pack(anchor="w")
+        ttk.Label(
+            header,
+            text="Bücherstapel für eine Klasse bearbeiten. Täglicher Ablauf: starten, "
+            "Arbeitsfenster öffnen, nach dem Einsatz beenden.",
+            style=theme.MUTED_LABEL,
+            wraplength=900,
+            justify="left",
+        ).pack(anchor="w", pady=(theme.SP_XS, 0))
 
-        # Aktions-Leiste: Hauptaktion (Start) hervorgehoben, Einrichtung/
-        # Aktualisierung als sekundäre Aktionen.
-        top = ttk.Frame(self)
-        top.pack(fill="x", padx=12, pady=(0, 4))
-        self._btn_start = ttk.Button(
-            top, text="Ausleihe starten", style=theme.PRIMARY_BUTTON, command=self.on_start
+        # Hauptaktions-Karte: die täglichen Knöpfe, groß und hervorgehoben.
+        primary = ttk.LabelFrame(
+            self, text="Tägliche Bedienung", style=theme.CARD_FRAME
         )
-        self._btn_start.pack(side="left", padx=(0, 4))
+        primary.pack(fill="x", padx=theme.SP_LG, pady=theme.SP_SM)
+        prow = ttk.Frame(primary, style="Card.TFrame")
+        prow.pack(fill="x", padx=theme.SP_MD, pady=theme.SP_MD)
+        self._btn_start = ttk.Button(
+            prow, text="Ausleihe starten", style=theme.PRIMARY_BUTTON, command=self.on_start
+        )
+        self._btn_start.pack(side="left", padx=(0, theme.SP_SM))
         add_tooltip(
             self._btn_start,
             "Startet den Dienst auf diesem Laptop. Danach das Arbeitsfenster öffnen.",
         )
-        self._btn_open = ttk.Button(top, text="Arbeitsfenster öffnen", command=self.on_open_host)
-        self._btn_open.pack(side="left", padx=4)
+        self._btn_open = ttk.Button(
+            prow, text="Arbeitsfenster öffnen", command=self.on_open_host
+        )
+        self._btn_open.pack(side="left", padx=theme.SP_SM)
         add_tooltip(
             self._btn_open,
             "Öffnet die Seite, auf der du Schuljahr, Klasse und Helfer auswählst.",
         )
-        self._btn_stop = ttk.Button(top, text="Ausleihe beenden", command=self.on_stop)
-        self._btn_stop.pack(side="left", padx=4)
-        add_tooltip(self._btn_stop, "Beendet die Ausleihe nach dem Einsatz.")
-        ttk.Separator(top, orient="vertical").pack(side="left", fill="y", padx=8)
-        self._btn_install = ttk.Button(
-            top, text="Einrichtung", style=theme.SECONDARY_BUTTON, command=self.on_install
+        self._btn_stop = ttk.Button(
+            prow, text="Ausleihe beenden", command=self.on_stop
         )
-        self._btn_install.pack(side="left", padx=4)
+        self._btn_stop.pack(side="left", padx=theme.SP_SM)
+        add_tooltip(self._btn_stop, "Beendet die Ausleihe nach dem Einsatz.")
+
+        # Sekundäre Werkzeugleiste: seltene, einmalige Aktionen — bewusst
+        # kleiner und abgesetzt, keine Peers der täglichen Knöpfe.
+        secondary = ttk.Frame(self)
+        secondary.pack(fill="x", padx=theme.SP_LG, pady=(0, theme.SP_SM))
+        ttk.Label(
+            secondary, text="Einmalig / selten:", style=theme.MUTED_LABEL
+        ).pack(side="left", padx=(0, theme.SP_SM))
+        self._btn_install = ttk.Button(
+            secondary, text="Einrichtung", style=theme.SECONDARY_BUTTON, command=self.on_install
+        )
+        self._btn_install.pack(side="left", padx=(0, theme.SP_SM))
         add_tooltip(
             self._btn_install,
             "Einmalig: lädt die benötigten Teile herunter und bereitet die Ausleihe vor.",
         )
         self._btn_update = ttk.Button(
-            top, text="Aktualisieren", style=theme.SECONDARY_BUTTON, command=self.on_update
+            secondary, text="Aktualisieren", style=theme.SECONDARY_BUTTON, command=self.on_update
         )
-        self._btn_update.pack(side="left", padx=4)
+        self._btn_update.pack(side="left")
         add_tooltip(
             self._btn_update,
             "Holt eine neue Version. Nur verwenden, wenn eine Aktualisierung nötig ist.",
         )
 
-        self._busy_bar = BusyBar(self)
-        self._busy_bar.pack(fill="x", padx=12)
+        # Status-Banner.
+        self._banner = Banner(self, "")
+        self._banner.pack(fill="x", padx=theme.SP_LG, pady=(0, theme.SP_SM))
 
-        # Log (mitte).
-        self._log = LogView(self, height=14)
-        self._log.pack(fill="both", expand=True, padx=12, pady=4)
+        self._busy_bar = BusyBar(self)
+        self._busy_bar.pack(fill="x", padx=theme.SP_LG)
+
+        # Log (Arbeitsfenster).
+        self._log = LogView(self, height=12)
+        self._log.pack(fill="both", expand=True, padx=theme.SP_LG, pady=theme.SP_SM)
         self._log.append(
             "Bereit. Bei der ersten Nutzung „Einrichtung“ klicken, danach "
             "Zugangsdaten eintragen und speichern."
@@ -110,30 +136,30 @@ class AusleiheTab(ttk.Frame):
             "Schul-WLAN ist das erwartet; die Hilfe erklärt den nächsten Klick."
         )
 
-        # .env-Form (unten).
+        # Zugangsdaten-Karte (unten).
         form = ttk.LabelFrame(
             self, text="Zugangsdaten (nur bei der Einrichtung)", style=theme.CARD_FRAME
         )
-        form.pack(fill="x", padx=12, pady=(4, 12))
+        form.pack(fill="x", padx=theme.SP_LG, pady=(0, theme.SP_LG))
         self._fields: dict[str, FormField] = {}
         for key, label, masked in _ENV_FIELDS:
             f = FormField(form, label=label, masked=masked)
-            f.pack(fill="x", padx=10, pady=2)
+            f.pack(fill="x", padx=theme.SP_MD, pady=theme.SP_XS)
             self._fields[key] = f
         ttk.Label(
             form,
             text="Die Angaben bleiben auf diesem Laptop. Passwörter werden nicht im "
             "Protokoll angezeigt.",
-            style=theme.MUTED_LABEL,
+            style=theme.CARD_MUTED_LABEL,
             wraplength=860,
             justify="left",
-        ).pack(anchor="w", padx=10, pady=(4, 2))
+        ).pack(anchor="w", padx=theme.SP_MD, pady=(theme.SP_SM, theme.SP_XS))
         ttk.Button(
             form,
             text="Zugangsdaten speichern",
             style=theme.SECONDARY_BUTTON,
             command=self.on_save_env,
-        ).pack(anchor="w", padx=10, pady=6)
+        ).pack(anchor="w", padx=theme.SP_MD, pady=(theme.SP_XS, theme.SP_MD))
 
     # --- .env-Form --------------------------------------------------------
 
@@ -245,7 +271,7 @@ class AusleiheTab(ttk.Frame):
         self._busy = True
         for b in (self._btn_install, self._btn_update, self._btn_start, self._btn_stop):
             b.state(["disabled"])
-        self._busy_bar.start()
+        self._busy_bar.start(f"{label} läuft …")
         self._banner.set_text(f"{label} läuft …", "warning")
 
     def _end_busy(self) -> None:

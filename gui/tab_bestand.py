@@ -70,83 +70,103 @@ class BestandTab(ttk.Frame):
     # --- Aufbau ------------------------------------------------------------
 
     def _build(self) -> None:
-        # Kopf: verständliche Status-Ampel statt grauem Fließtext.
-        self._banner = Banner(
-            self,
-            "Jahres-Excel auswählen, dann immer zuerst „Erst prüfen (nichts ändern)“ "
-            "verwenden.",
-        )
-        self._banner.pack(fill="x", padx=12, pady=(12, 8))
+        # Kopf: Titel + Einordnung (statt Banner-als-erstes).
+        header = ttk.Frame(self)
+        header.pack(fill="x", padx=theme.SP_LG, pady=(theme.SP_LG, theme.SP_SM))
+        ttk.Label(header, text="Bestandsliste", style=theme.HEADING_LABEL).pack(anchor="w")
+        ttk.Label(
+            header,
+            text="Die jährliche Excel-Datei aus IServ aktualisieren und sehen, welche "
+            "Bücher nachbestellt werden müssen.",
+            style=theme.MUTED_LABEL,
+            wraplength=900,
+            justify="left",
+        ).pack(anchor="w", pady=(theme.SP_XS, 0))
 
-        # Aktions-Leiste: Prüfen (Primary/sicher) und Aktualisieren (Danger/
-        # überschreibt die Datei) sind die Hauptaktionen; Einrichtung/
-        # Aktualisieren der Bestandslisten-Hilfe sind seltene, sekundäre Aktionen.
-        top = ttk.Frame(self)
-        top.pack(fill="x", padx=12, pady=(0, 4))
+        # Hauptaktions-Karte: Prüfen (sicher) + Excel aktualisieren (daten-
+        # verändernd, rot) + die zugehörige Excel-Auswahl — Kontrolle neben
+        # dem, was sie beeinflusst.
+        primary = ttk.LabelFrame(
+            self, text="Jahresablauf", style=theme.CARD_FRAME
+        )
+        primary.pack(fill="x", padx=theme.SP_LG, pady=theme.SP_SM)
+        prow = ttk.Frame(primary, style="Card.TFrame")
+        prow.pack(fill="x", padx=theme.SP_MD, pady=theme.SP_MD)
         self._btn_dryrun = ttk.Button(
-            top,
+            prow,
             text="Erst prüfen (nichts ändern)",
             style=theme.PRIMARY_BUTTON,
             command=self.on_dry_run,
         )
-        self._btn_dryrun.pack(side="left", padx=(0, 4))
+        self._btn_dryrun.pack(side="left", padx=(0, theme.SP_SM))
         add_tooltip(
             self._btn_dryrun,
             "Liest IServ und zeigt einen Bericht. Die Excel-Datei bleibt unverändert.",
         )
         self._btn_real = ttk.Button(
-            top, text="Excel aktualisieren", style=theme.DANGER_BUTTON, command=self.on_real_run
+            prow, text="Excel aktualisieren", style=theme.DANGER_BUTTON, command=self.on_real_run
         )
-        self._btn_real.pack(side="left", padx=4)
+        self._btn_real.pack(side="left", padx=theme.SP_SM)
         add_tooltip(
             self._btn_real,
             "Überträgt die geprüften Zahlen in die Excel-Datei. Zuerst immer prüfen.",
         )
-        ttk.Separator(top, orient="vertical").pack(side="left", fill="y", padx=8)
-        self._btn_install = ttk.Button(
-            top, text="Einrichtung", style=theme.SECONDARY_BUTTON, command=self.on_install
-        )
-        self._btn_install.pack(side="left", padx=4)
-        add_tooltip(
-            self._btn_install,
-            "Einmalig: richtet die jährliche Bestandsliste auf diesem Laptop ein.",
-        )
-        self._btn_update = ttk.Button(
-            top, text="Aktualisieren", style=theme.SECONDARY_BUTTON, command=self.on_update
-        )
-        self._btn_update.pack(side="left", padx=4)
-        add_tooltip(self._btn_update, "Holt eine neue Version der Bestandslisten-Hilfe.")
 
-        self._busy_bar = BusyBar(self)
-        self._busy_bar.pack(fill="x", padx=12)
-
-        # Excel-Auswahlzeile.
-        excel_row = ttk.Frame(self)
-        excel_row.pack(fill="x", padx=12, pady=(4, 0))
-        ttk.Label(excel_row, text="Jahres-Excel:", width=14, anchor="w").pack(side="left")
+        excel_row = ttk.Frame(primary, style="Card.TFrame")
+        excel_row.pack(fill="x", padx=theme.SP_MD, pady=(0, theme.SP_MD))
+        ttk.Label(
+            excel_row, text="Jahres-Excel:", style=theme.CARD_MUTED_LABEL, width=14, anchor="w"
+        ).pack(side="left")
         self._excel_var = tk.StringVar(value="(keine ausgewählt)")
-        ttk.Label(excel_row, textvariable=self._excel_var, anchor="w").pack(
-            side="left", fill="x", expand=True, padx=(0, 8)
-        )
+        ttk.Label(
+            excel_row, textvariable=self._excel_var, style=theme.CARD_MUTED_LABEL, anchor="w"
+        ).pack(side="left", fill="x", expand=True, padx=(0, theme.SP_SM))
         self._btn_pick = ttk.Button(
             excel_row, text="Datei auswählen …", command=self.on_pick_excel
         )
         self._btn_pick.pack(side="left")
         add_tooltip(self._btn_pick, "Wähle die Excel-Datei des aktuellen Schuljahres aus.")
 
-        # Mittelteil: Katalog-Editor (oben), Config-Roh-Editor (Erweitert),
-        # Schuljahr, Report-Log (unten).
-        mid = ttk.Frame(self)
-        mid.pack(fill="both", expand=True, padx=12, pady=4)
+        # Sekundäre Werkzeugleiste: seltene, einmalige Aktionen — bewusst
+        # kleiner und abgesetzt, keine Peers der Jahres-Aktionen.
+        secondary = ttk.Frame(self)
+        secondary.pack(fill="x", padx=theme.SP_LG, pady=(0, theme.SP_SM))
+        ttk.Label(
+            secondary, text="Einmalig / selten:", style=theme.MUTED_LABEL
+        ).pack(side="left", padx=(0, theme.SP_SM))
+        self._btn_install = ttk.Button(
+            secondary, text="Einrichtung", style=theme.SECONDARY_BUTTON, command=self.on_install
+        )
+        self._btn_install.pack(side="left", padx=(0, theme.SP_SM))
+        add_tooltip(
+            self._btn_install,
+            "Einmalig: richtet die jährliche Bestandsliste auf diesem Laptop ein.",
+        )
+        self._btn_update = ttk.Button(
+            secondary, text="Aktualisieren", style=theme.SECONDARY_BUTTON, command=self.on_update
+        )
+        self._btn_update.pack(side="left")
+        add_tooltip(self._btn_update, "Holt eine neue Version der Bestandslisten-Hilfe.")
 
-        # ── Katalog-Editor (Treeview) ──────────────────────────────────────
+        # Status-Banner + Busy-Bar.
+        self._banner = Banner(self, "")
+        self._banner.pack(fill="x", padx=theme.SP_LG, pady=(0, theme.SP_SM))
+        self._busy_bar = BusyBar(self)
+        self._busy_bar.pack(fill="x", padx=theme.SP_LG)
+
+        # Mittelteil: Katalog-Editor (oben, prominent), Erweitert (eingeklappt),
+        # Report-Log (unten).
+        mid = ttk.Frame(self)
+        mid.pack(fill="both", expand=True, padx=theme.SP_LG, pady=theme.SP_SM)
+
+        # ── Katalog-Editor (Treeview + Aktionen in 3 Cluster gegliedert) ───
         kat = ttk.LabelFrame(
             mid, text="Buchkatalog (Fach und Jahrgang → Buchnummer)", style=theme.CARD_FRAME
         )
-        kat.pack(fill="both", expand=True, pady=(0, 4))
+        kat.pack(fill="both", expand=True, pady=(0, theme.SP_SM))
 
-        tree_row = ttk.Frame(kat)
-        tree_row.pack(fill="both", expand=True, padx=8, pady=(8, 2))
+        tree_row = ttk.Frame(kat, style="Card.TFrame")
+        tree_row.pack(fill="both", expand=True, padx=theme.SP_SM, pady=(theme.SP_SM, theme.SP_XS))
         self._tree = ttk.Treeview(
             tree_row, columns=_KAT_COLUMNS, show="headings", height=9
         )
@@ -166,32 +186,7 @@ class BestandTab(ttk.Frame):
         tree_scroll.pack(side="right", fill="y")
         self._tree.bind("<Double-1>", lambda _e: self.on_katalog_edit())
 
-        kat_btns = ttk.Frame(kat)
-        kat_btns.pack(fill="x", padx=8, pady=(2, 8))
-        for text, cmd in [
-            ("Bücher aus Excel übernehmen", self.on_katalog_import),
-            ("Neue Excel aus Katalog", self.on_katalog_render),
-            ("Zuordnungen übernehmen", self.on_katalog_sync),
-            ("Hinzufügen", self.on_katalog_add),
-            ("Bearbeiten", self.on_katalog_edit),
-            ("Entfernen", self.on_katalog_remove),
-            ("Katalog speichern", self.on_katalog_save),
-            ("Änderungen verwerfen / neu laden", self.on_katalog_reload),
-        ]:
-            button = ttk.Button(kat_btns, text=text, command=cmd)
-            button.pack(side="left", padx=(0, 4))
-        add_tooltip(
-            kat_btns.winfo_children()[0],
-            "Übernimmt die Fach-, Jahrgangs- und Buchdaten aus einer vorhandenen Excel.",
-        )
-        add_tooltip(
-            kat_btns.winfo_children()[1],
-            "Erstellt eine neue Excel-Datei aus der Vorlage und dem Katalog.",
-        )
-        add_tooltip(
-            kat_btns.winfo_children()[2],
-            "Übernimmt die Katalog-Zuordnungen für die Bestandsprüfung.",
-        )
+        self._build_catalog_actions(kat)
 
         # ── Erweitert (eingeklappt): seltene, technische Sonderfälle. ──────
         # Raw-JSON-Sonder-Zuordnungen + Schuljahr-Override sind produktions-
@@ -199,43 +194,48 @@ class BestandTab(ttk.Frame):
         # Hauptbereich, damit sie nicht "aus Versehen ohne Rücksprache"
         # geändert werden.
         adv = CollapsibleSection(mid, title="Erweitert (nur nach Rücksprache)")
-        adv.pack(fill="x", pady=(0, 4))
+        adv.pack(fill="x", pady=(0, theme.SP_SM))
         cfg = ttk.LabelFrame(
             adv.body, text="Zusätzliche Einstellungen", style=theme.CARD_FRAME
         )
-        cfg.pack(fill="x", pady=(0, 4))
+        cfg.pack(fill="x", pady=(0, theme.SP_XS))
         ttk.Label(
             cfg,
             text="Diese Felder brauchst du im normalen Jahresablauf nicht. Bei Unsicherheit "
             "nichts ändern und die verantwortliche Person fragen.",
-            style=theme.MUTED_LABEL,
+            style=theme.CARD_MUTED_LABEL,
             wraplength=860,
             justify="left",
-        ).pack(anchor="w", padx=8, pady=(6, 0))
+        ).pack(anchor="w", padx=theme.SP_SM, pady=(theme.SP_SM, 0))
 
-        ss_row = ttk.Frame(cfg)
-        ss_row.pack(fill="x", padx=8, pady=(8, 2))
+        ss_row = ttk.Frame(cfg, style="Card.TFrame")
+        ss_row.pack(fill="x", padx=theme.SP_SM, pady=(theme.SP_SM, theme.SP_XS))
         ttk.Label(
-            ss_row, text="Reservebestand pro Buch:", width=28, anchor="w"
+            ss_row, text="Reservebestand pro Buch:", style=theme.CARD_MUTED_LABEL,
+            width=28, anchor="w",
         ).pack(side="left")
         self._safety_var = tk.StringVar()
         ttk.Entry(ss_row, textvariable=self._safety_var, width=8).pack(side="left")
 
-        ov_row = ttk.Frame(cfg)
-        ov_row.pack(fill="both", padx=8, pady=2)
-        ov_lbl = ttk.Label(
+        ov_row = ttk.Frame(cfg, style="Card.TFrame")
+        ov_row.pack(fill="both", padx=theme.SP_SM, pady=theme.SP_XS)
+        ttk.Label(
             ov_row,
             text="Sonder-Zuordnungen\n(nur nach Rücksprache):",
+            style=theme.CARD_MUTED_LABEL,
             width=28,
             anchor="nw",
             justify="left",
+        ).pack(side="left")
+        self._overrides_text = tk.Text(
+            ov_row, height=6, width=48, font=theme.MONO,
+            background=theme.LOG_BG, foreground=theme.LOG_FG, relief="solid", borderwidth=1,
+            padx=theme.SP_SM, pady=theme.SP_XS,
         )
-        ov_lbl.pack(side="left")
-        self._overrides_text = tk.Text(ov_row, height=6, width=48, font=("TkFixedFont",))
         self._overrides_text.pack(side="left", fill="x", expand=True)
 
-        cfg_btns = ttk.Frame(cfg)
-        cfg_btns.pack(fill="x", padx=8, pady=(4, 8))
+        cfg_btns = ttk.Frame(cfg, style="Card.TFrame")
+        cfg_btns.pack(fill="x", padx=theme.SP_SM, pady=(theme.SP_XS, theme.SP_SM))
         self._btn_save_cfg = ttk.Button(
             cfg_btns,
             text="Zusätzliche Einstellungen speichern",
@@ -248,10 +248,11 @@ class BestandTab(ttk.Frame):
         )
         self._btn_reload_cfg = ttk.Button(
             cfg_btns,
-            text="Zusätzliche Einstellungen neu laden",
+            text="Neu laden",
+            style=theme.SECONDARY_BUTTON,
             command=self._load_config_into_form,
         )
-        self._btn_reload_cfg.pack(side="left", padx=4)
+        self._btn_reload_cfg.pack(side="left", padx=theme.SP_SM)
         add_tooltip(
             self._btn_reload_cfg,
             "Lädt die zuletzt gespeicherten zusätzlichen Einstellungen.",
@@ -259,7 +260,7 @@ class BestandTab(ttk.Frame):
 
         # Schuljahr (optional, frei gelassen = aktuelles) — ebenfalls "Erweitert".
         sy_row = ttk.Frame(adv.body)
-        sy_row.pack(fill="x", pady=(0, 4))
+        sy_row.pack(fill="x", pady=(0, theme.SP_XS))
         ttk.Label(
             sy_row, text="Schuljahr (nur falls nötig):", width=28, anchor="w"
         ).pack(side="left")
@@ -267,10 +268,10 @@ class BestandTab(ttk.Frame):
         ttk.Entry(sy_row, textvariable=self._schoolyear_var, width=14).pack(side="left")
         ttk.Label(
             sy_row, text='z. B. "2025/2026"; leer = aktuelles', style=theme.MUTED_LABEL
-        ).pack(side="left", padx=8)
+        ).pack(side="left", padx=theme.SP_SM)
 
         # Report-Log (unten, füllt den Rest).
-        self._log = LogView(mid, height=16)
+        self._log = LogView(mid, height=14)
         self._log.pack(fill="both", expand=True)
         self._log.append(
             "Bereit. „Einrichtung“ nur bei der ersten Nutzung klicken. Danach "
@@ -280,6 +281,70 @@ class BestandTab(ttk.Frame):
             "Die Prüfung ändert nichts. „Excel aktualisieren“ erst nach einem "
             "plausiblen Prüfbericht klicken; die alte Excel wird vorher gesichert."
         )
+
+    def _build_catalog_actions(self, kat: ttk.Widget) -> None:
+        """Gliedert die acht Katalog-Aktionen in drei beschriftete Cluster.
+
+        Der Katalog bleibt sichtbar (prominent), aber die bisher flachen
+        acht Peer-Knöpfe werden gruppiert: Daten (Import/Erzeugen/Übernehmen),
+        Einträge (Hinzufügen/Bearbeiten/Entfernen), Katalog (Speichern/Neu
+        laden). Alle sekundär gestylt — keine ist die Jahres-Hauptaktion.
+        """
+        bar = ttk.Frame(kat, style="Card.TFrame")
+        bar.pack(fill="x", padx=theme.SP_SM, pady=(theme.SP_XS, theme.SP_SM))
+        for c in (0, 2, 4):
+            bar.columnconfigure(c, weight=1, uniform="c")
+
+        clusters: tuple[tuple[str, tuple[tuple[str, object, str], ...]], ...] = (
+            (
+                "Daten",
+                (
+                    ("Bücher aus Excel übernehmen", self.on_katalog_import,
+                     "Übernimmt die Fach-, Jahrgangs- und Buchdaten aus einer vorhandenen Excel."),
+                    ("Neue Excel aus Katalog", self.on_katalog_render,
+                     "Erstellt eine neue Excel-Datei aus der Vorlage und dem Katalog."),
+                    ("Zuordnungen übernehmen", self.on_katalog_sync,
+                     "Übernimmt die Katalog-Zuordnungen für die Bestandsprüfung."),
+                ),
+            ),
+            (
+                "Einträge",
+                (
+                    ("Hinzufügen", self.on_katalog_add,
+                     "Legt eine neue Buch-Zuordnung (Fach, Jahrgang, Buchnummer) an."),
+                    ("Bearbeiten", self.on_katalog_edit,
+                     "Bearbeitet die ausgewählte Buch-Zuordnung (auch per Doppelklick)."),
+                    ("Entfernen", self.on_katalog_remove,
+                     "Entfernt die ausgewählte Buch-Zuordnung (erst dauerhaft nach „Speichern“)."),
+                ),
+            ),
+            (
+                "Katalog",
+                (
+                    ("Speichern", self.on_katalog_save,
+                     "Schreibt den bearbeiteten Katalog dauerhaft in die Katalog-Datei."),
+                    ("Verwerfen / neu laden", self.on_katalog_reload,
+                     "Verwirft nicht gespeicherte Änderungen und lädt den Katalog neu."),
+                ),
+            ),
+        )
+        for ci, (caption, btns) in enumerate(clusters):
+            col = ci * 2
+            cell = ttk.Frame(bar, style="Card.TFrame")
+            cell.grid(row=0, column=col, sticky="ew", padx=(theme.SP_SM if ci else 0, 0))
+            ttk.Label(
+                cell, text=caption, style=theme.CARD_MUTED_LABEL
+            ).pack(anchor="w")
+            row = ttk.Frame(cell, style="Card.TFrame")
+            row.pack(fill="x", pady=(theme.SP_XS, 0))
+            for text, cmd, tip in btns:
+                b = ttk.Button(row, text=text, style=theme.SECONDARY_BUTTON, command=cmd)
+                b.pack(side="left", padx=(0, theme.SP_XS))
+                add_tooltip(b, tip)
+            if ci < 2:
+                ttk.Separator(bar, orient="vertical").grid(
+                    row=0, column=col + 1, sticky="ns", padx=theme.SP_SM
+                )
 
     # --- Config laden/speichern --------------------------------------------
 
@@ -696,7 +761,7 @@ class BestandTab(ttk.Frame):
         self._busy = True
         for b in (self._btn_install, self._btn_update, self._btn_dryrun, self._btn_real):
             b.state(["disabled"])
-        self._busy_bar.start()
+        self._busy_bar.start(f"{label} läuft …")
         self._banner.set_text(f"{label} läuft …", "warning")
 
     def _end_busy(self) -> None:

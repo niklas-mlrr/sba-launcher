@@ -125,7 +125,7 @@ class HelpTab(ttk.Frame):
 
     def _build(self) -> None:
         top = ttk.Frame(self)
-        top.pack(fill="x", padx=14, pady=(14, 6))
+        top.pack(fill="x", padx=theme.SP_LG, pady=(theme.SP_LG, theme.SP_SM))
         ttk.Label(
             top,
             text="Kurzhilfe für das SBA-Team",
@@ -135,9 +135,10 @@ class HelpTab(ttk.Frame):
             top,
             text="Hier steht, was du im Alltag anklicken musst. Für die vollständige "
             "Schritt-für-Schritt-Anleitung kannst du die Text- oder PDF-Version öffnen.",
+            style=theme.MUTED_LABEL,
             justify="left",
-            wraplength=820,
-        ).pack(anchor="w", pady=(4, 8))
+            wraplength=860,
+        ).pack(anchor="w", pady=(theme.SP_XS, theme.SP_SM))
 
         links = ttk.Frame(top)
         links.pack(anchor="w")
@@ -146,7 +147,7 @@ class HelpTab(ttk.Frame):
             text="Ausführliche Anleitung öffnen",
             style=theme.SECONDARY_BUTTON,
             command=lambda: self._open_document(_documentation_paths()[0]),
-        ).pack(side="left", padx=(0, 6))
+        ).pack(side="left", padx=(0, theme.SP_SM))
         ttk.Button(
             links,
             text="PDF-Anleitung öffnen",
@@ -157,10 +158,10 @@ class HelpTab(ttk.Frame):
             top,
             text="Die ausführliche Anleitung liegt im Ordner des Hauptwerkzeugs.",
             style=theme.MUTED_LABEL,
-        ).pack(anchor="w", pady=(5, 0))
+        ).pack(anchor="w", pady=(theme.SP_SM, 0))
 
         body = ttk.LabelFrame(self, style=theme.CARD_FRAME)
-        body.pack(fill="both", expand=True, padx=14, pady=(0, 14))
+        body.pack(fill="both", expand=True, padx=theme.SP_LG, pady=(0, theme.SP_LG))
         scroll = ttk.Scrollbar(body, orient="vertical")
         self._text = tk.Text(
             body,
@@ -168,8 +169,8 @@ class HelpTab(ttk.Frame):
             state="disabled",
             relief="flat",
             borderwidth=0,
-            padx=12,
-            pady=8,
+            padx=theme.SP_MD,
+            pady=theme.SP_SM,
             cursor="arrow",
             background=theme.SURFACE,
             foreground=theme.TEXT,
@@ -180,9 +181,13 @@ class HelpTab(ttk.Frame):
         scroll.pack(side="right", fill="y")
 
         self._text.tag_configure(
-            "heading", font=("TkDefaultFont", 11, "bold"), spacing1=10, foreground=theme.ACCENT
+            "heading", font=theme.SUBHEADING, spacing1=theme.SP_MD, spacing3=theme.SP_XS,
+            foreground=theme.ACCENT,
         )
-        self._text.tag_configure("body", spacing1=2, spacing3=6, foreground=theme.TEXT)
+        self._text.tag_configure(
+            "body", font=theme.BODY, spacing1=theme.SP_XS, spacing3=theme.SP_SM,
+            foreground=theme.TEXT,
+        )
         self._text.configure(state="normal")
         for heading, content in _SECTIONS:
             self._text.insert("end", heading + "\n", "heading")

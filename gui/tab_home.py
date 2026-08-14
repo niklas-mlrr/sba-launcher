@@ -16,13 +16,13 @@ from tkinter import ttk
 from core import status as status_mod
 from gui import setup_wizard, theme
 
-# Bereitschaftszustand → (Hintergrund, Text, Symbol) — dieselbe Palette wie
-# gui.widgets.Banner, hier kompakt pro Karte statt als volle Bannerzeile.
+# Bereitschaftszustand → (Pill-Hintergrund, Text, Symbol) — wie gui.widgets.Banner,
+# hier kompakt pro Karte als Status-Pille.
 _STATE_STYLES: dict[str, tuple[str, str, str]] = {
     "running": (theme.WARNING_BG, theme.WARNING_TEXT, "●"),
     "ready": (theme.SUCCESS_BG, theme.SUCCESS_TEXT, "✓"),
     "partial": (theme.INFO_BG, theme.INFO_TEXT, "i"),
-    "missing": (theme.BG, theme.TEXT_MUTED, "○"),
+    "missing": (theme.SURFACE_2, theme.TEXT_MUTED, "○"),
 }
 
 
@@ -49,24 +49,25 @@ class HomeTab(ttk.Frame):
         super().__init__(parent, **kw)
         self._navigate = navigate or (lambda _key: None)
         self._running_getters = running_getters or {}
-        self._cards: dict[str, dict[str, tk.Widget]] = {}
+        self._pills: dict[str, dict[str, tk.Widget]] = {}
         self._build()
         self.refresh()
 
     # --- Aufbau ------------------------------------------------------------
 
     def _build(self) -> None:
+        # Kopf: großer Display-Titel + einzeilige Einordnung + Hauptaktion.
         top = ttk.Frame(self)
-        top.pack(fill="x", padx=16, pady=(16, 4))
-        ttk.Label(top, text="SBA-Launcher", style=theme.HEADING_LABEL).pack(anchor="w")
+        top.pack(fill="x", padx=theme.SP_XL, pady=(theme.SP_XL, theme.SP_SM))
+        ttk.Label(top, text="SBA-Launcher", style=theme.DISPLAY_LABEL).pack(anchor="w")
         ttk.Label(
             top,
             text="Startpunkt für die drei Werkzeuge der Schulbuchausleihe. Bei der "
             "ersten Nutzung auf diesem Laptop unten „Ersteinrichtung starten“ klicken.",
             style=theme.MUTED_LABEL,
-            wraplength=780,
+            wraplength=860,
             justify="left",
-        ).pack(anchor="w", pady=(4, 10))
+        ).pack(anchor="w", pady=(theme.SP_SM, theme.SP_MD))
         ttk.Button(
             top,
             text="Ersteinrichtung starten",
@@ -74,8 +75,9 @@ class HomeTab(ttk.Frame):
             command=self._open_wizard,
         ).pack(anchor="w")
 
+        # Drei Karten nebeneinander.
         cards_row = ttk.Frame(self)
-        cards_row.pack(fill="both", expand=True, padx=16, pady=12)
+        cards_row.pack(fill="both", expand=True, padx=theme.SP_XL, pady=theme.SP_MD)
         card_defs = (
             ("ausleihe", "Ausleihe & Ausgabe"),
             ("bestand", "Bestandsliste"),
@@ -83,34 +85,47 @@ class HomeTab(ttk.Frame):
         )
         for i, (key, label) in enumerate(card_defs):
             cards_row.columnconfigure(i, weight=1, uniform="card")
-            self._cards[key] = self._build_card(cards_row, label, key)
-            pad_left = 0 if i == 0 else 8
-            self._cards[key]["frame"].grid(row=0, column=i, sticky="nsew", padx=(pad_left, 0))
+            self._pills[key] = self._build_card(cards_row, label, key)
+            pad_left = 0 if i == 0 else theme.SP_MD
+            self._pills[key]["frame"].grid(
+                row=0, column=i, sticky="nsew", padx=(pad_left, 0)
+            )
 
+        # Fußnote: Notnagel-Hinweis.
         bottom = ttk.Frame(self)
-        bottom.pack(fill="x", padx=16, pady=(0, 16))
+        bottom.pack(fill="x", padx=theme.SP_XL, pady=(0, theme.SP_XL))
         ttk.Label(
             bottom,
             text="Bei einem Problem: Tab „Hilfe“ öffnen oder auf den USB-Handscanner "
             "und das offizielle IServ-Ausleihe-Frontend zurückfallen.",
             style=theme.MUTED_LABEL,
-            wraplength=780,
+            wraplength=860,
             justify="left",
         ).pack(anchor="w")
 
     def _build_card(self, parent: tk.Widget, title: str, key: str) -> dict[str, tk.Widget]:
         frame = ttk.LabelFrame(parent, text=title, style=theme.CARD_FRAME)
-        state_row = tk.Frame(frame, background=theme.SURFACE)
-        state_row.pack(fill="x", padx=10, pady=(10, 4))
+        inner = ttk.Frame(frame, style="Card.TFrame")
+        inner.pack(fill="both", expand=True, padx=theme.SP_MD, pady=theme.SP_MD)
+
+        # Status-Pille: getönter Hintergrund + Symbol + Text.
+        pill = tk.Frame(inner, background=theme.SURFACE_2)
+        pill.pack(fill="x", pady=(0, theme.SP_MD))
         symbol = tk.Label(
-            state_row, text="", font=("TkDefaultFont", 11, "bold"), background=theme.SURFACE
+            pill, text="", font=theme.BODY_BOLD, padx=theme.SP_SM, pady=theme.SP_SM
         )
         symbol.pack(side="left")
-        detail = tk.Label(state_row, text="", background=theme.SURFACE, anchor="w")
-        detail.pack(side="left", padx=(6, 0), fill="x", expand=True)
-        button = ttk.Button(frame, text="Öffnen", command=lambda: self._navigate(key))
-        button.pack(anchor="w", padx=10, pady=(4, 10))
-        return {"frame": frame, "symbol": symbol, "detail": detail, "button": button}
+        detail = tk.Label(
+            pill, text="", font=theme.BODY, anchor="w", pady=theme.SP_SM
+        )
+        detail.pack(side="left", fill="x", expand=True, padx=(0, theme.SP_SM))
+
+        button = ttk.Button(
+            inner, text="Öffnen", style=theme.SECONDARY_BUTTON,
+            command=lambda: self._navigate(key),
+        )
+        button.pack(anchor="w")
+        return {"frame": frame, "pill": pill, "symbol": symbol, "detail": detail}
 
     def _open_wizard(self) -> None:
         setup_wizard.open_wizard(self, on_finish=self.refresh)
@@ -129,12 +144,13 @@ class HomeTab(ttk.Frame):
             barcode_running=self._running_getters.get("barcode", lambda: False)(),
         )
         for st in overview:
-            card = self._cards.get(st.key)
+            card = self._pills.get(st.key)
             if card is None:
                 continue
             bg, fg, symbol = _STATE_STYLES[_state_for(st)]
-            card["symbol"].configure(text=symbol, foreground=fg, background=theme.SURFACE)
-            card["detail"].configure(text=st.detail, foreground=fg, background=theme.SURFACE)
+            card["pill"].configure(background=bg)
+            card["symbol"].configure(text=symbol, foreground=fg, background=bg)
+            card["detail"].configure(text=st.detail, foreground=fg, background=bg)
 
 
 def build(

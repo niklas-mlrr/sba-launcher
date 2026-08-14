@@ -26,9 +26,10 @@ from tkinter import messagebox, ttk
 from core.process import SubprocessManager
 from gui import theme
 
-# Cross-Plattform-Monospace (Tk-named font; fällt überall auf eine passende
-# Fixed-Font zurück — kein harter "Consolas"/"Courier"-String).
-_MONO = "TkFixedFont"
+# Cross-Plattform-Monospace: Named-Font-String (in theme.apply konfiguriert).
+# Kein Tuple — ``("TkFixedFont",)`` wäre eine Font-Beschreibung mit nicht
+# existierender Family und fiele still auf Größe-Default zurück (Phase-6-Bug).
+_MONO = theme.MONO
 
 # Zeilentyp → (Vordergrundfarbe im Log). "info" bleibt die Grundfarbe.
 _LOG_TAG_COLORS: dict[str, str] = {
@@ -57,13 +58,15 @@ class LogView(ttk.Frame):
             height=height,
             wrap="none",
             state="disabled",
-            font=(_MONO,),
+            font=_MONO,
             background=theme.LOG_BG,
             foreground=theme.LOG_FG,
             insertbackground=theme.LOG_FG,
-            relief="flat",
-            padx=6,
-            pady=4,
+            relief="solid",
+            borderwidth=1,
+            highlightthickness=0,
+            padx=theme.SP_SM,
+            pady=theme.SP_SM,
         )
         for kind, color in _LOG_TAG_COLORS.items():
             self._text.tag_configure(kind, foreground=color)
@@ -178,13 +181,15 @@ class Tooltip:
             self._window,
             text=self.text,
             justify="left",
-            wraplength=360,
-            background="#fffde8",
-            foreground="#222222",
+            wraplength=380,
+            background=theme.SURFACE,
+            foreground=theme.TEXT,
             relief="solid",
             borderwidth=1,
-            padx=7,
-            pady=4,
+            highlightbackground=theme.BORDER,
+            font=theme.CAPTION,
+            padx=theme.SP_SM,
+            pady=theme.SP_XS,
         ).pack()
 
     def hide(self, _event: tk.Event | None = None) -> None:
@@ -225,13 +230,15 @@ class Banner(ttk.Frame):
         self._inner = tk.Frame(self, background=theme.INFO_BG)
         self._inner.pack(fill="x")
         self._symbol = tk.Label(
-            self._inner, text="", font=("TkDefaultFont", 11, "bold"), padx=8, pady=6
+            self._inner, text="", font=theme.BODY_BOLD,
+            padx=theme.SP_MD, pady=theme.SP_SM,
         )
         self._symbol.pack(side="left")
         self._label = tk.Label(
-            self._inner, text="", anchor="w", justify="left", wraplength=760, pady=6
+            self._inner, text="", anchor="w", justify="left", wraplength=820,
+            font=theme.BODY, pady=theme.SP_SM,
         )
-        self._label.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self._label.pack(side="left", fill="x", expand=True, padx=(0, theme.SP_MD))
         self.set_text(text, kind)
 
     def set_text(self, text: str, kind: str = "info") -> None:
@@ -276,25 +283,30 @@ class CollapsibleSection(ttk.Frame):
 
 
 class BusyBar(ttk.Frame):
-    """Indeterminate Fortschrittsbalken für lange Aktionen (Install/Update/Lauf).
+    """Indeterminate Fortschrittsbalken + ruhige Statuszeile für lange Aktionen.
 
-    :meth:`start` zeigt den Balken und beginnt die Animation; :meth:`stop`
-    beendet und blendet ihn wieder aus. Ersetzt das reine Ausgrauen der
-    Buttons als einziges Lauf-Signal — sichtbares Feedback, dass etwas
+    :meth:`start` zeigt Balken und Statuszeile und beginnt die Animation;
+    :meth:`stop` beendet und blendet beides aus. Ersetzt das reine Ausgrauen
+    der Buttons als einziges Lauf-Signal — sichtbares Feedback, dass etwas
     passiert (Installationen können laut README mehrere Minuten dauern).
     """
 
     def __init__(self, parent: tk.Widget, **kw) -> None:
         super().__init__(parent, **kw)
         self._bar = ttk.Progressbar(self, mode="indeterminate")
+        self._label = ttk.Label(self, text="", style=theme.MUTED_LABEL)
 
-    def start(self) -> None:
-        self._bar.pack(fill="x")
+    def start(self, label: str = "") -> None:
+        if label:
+            self._label.configure(text=label)
+            self._label.pack(side="left", padx=(0, theme.SP_SM))
+        self._bar.pack(side="left", fill="x", expand=True)
         self._bar.start(12)
 
     def stop(self) -> None:
         self._bar.stop()
         self._bar.pack_forget()
+        self._label.pack_forget()
 
 
 def confirm_action(parent: tk.Widget, title: str, body: str) -> bool:

@@ -20,6 +20,7 @@ from core import ausleihe_ausgabe as aa
 from core import barcode as bc
 from core import bestand as bst
 from core import envtool, gitops
+from gui import theme
 from gui.widgets import Banner, BusyBar, FormField, LogView
 
 LogFn = Callable[[str], None]
@@ -100,31 +101,49 @@ class SetupWizard(tk.Toplevel):
         self.transient(parent)
         self.grab_set()
         self.resizable(True, True)
-        self.geometry("640x480")
+        self.geometry("720x560")
         self._on_finish = on_finish
         self._step = 0
         self._busy = False
 
-        self._header = ttk.Label(self, text="", style="Subheading.TLabel")
-        self._header.pack(anchor="w", padx=16, pady=(16, 4))
+        self._header = ttk.Label(self, text="", style=theme.HEADING_LABEL)
+        self._header.pack(anchor="w", padx=theme.SP_XL, pady=(theme.SP_XL, theme.SP_XS))
+        # Schritt-Anzeige: Punkt je Schritt, der aktuelle akzentuiert.
+        # tk.Label (nicht ttk) — ``foreground`` ist per-Widget steuerbar; bei
+        # ttk.Label wäre es stil-gesteuert und nicht einzeln setzbar.
+        self._indicator = ttk.Frame(self)
+        self._indicator.pack(anchor="w", padx=theme.SP_XL, pady=(0, theme.SP_SM))
+        self._dots: list[tk.Label] = []
+        for _i in range(self._TOTAL_STEPS):
+            dot = tk.Label(
+                self._indicator, text="●", font=theme.BODY_BOLD,
+                background=theme.BG, foreground=theme.TEXT_MUTED,
+            )
+            dot.pack(side="left", padx=(0, theme.SP_SM))
+            self._dots.append(dot)
+
         self._banner = Banner(self, "")
-        self._banner.pack(fill="x", padx=16)
+        self._banner.pack(fill="x", padx=theme.SP_XL)
 
         self._body = ttk.Frame(self)
-        self._body.pack(fill="both", expand=True, padx=16, pady=12)
+        self._body.pack(fill="both", expand=True, padx=theme.SP_XL, pady=theme.SP_MD)
 
         nav = ttk.Frame(self)
-        nav.pack(fill="x", padx=16, pady=(0, 16))
-        self._btn_back = ttk.Button(nav, text="Zurück", command=self._go_back)
+        nav.pack(fill="x", padx=theme.SP_XL, pady=(0, theme.SP_XL))
+        self._btn_back = ttk.Button(
+            nav, text="Zurück", style=theme.SECONDARY_BUTTON, command=self._go_back
+        )
         self._btn_back.pack(side="left")
-        self._btn_skip = ttk.Button(nav, text="Überspringen", command=self._go_next)
-        self._btn_skip.pack(side="right", padx=(4, 0))
+        self._btn_skip = ttk.Button(
+            nav, text="Überspringen", style=theme.SECONDARY_BUTTON, command=self._go_next
+        )
+        self._btn_skip.pack(side="right", padx=(theme.SP_XS, 0))
         self._btn_next = ttk.Button(
-            nav, text="Weiter", style="Primary.TButton", command=self._go_next
+            nav, text="Weiter", style=theme.PRIMARY_BUTTON, command=self._go_next
         )
         self._btn_next.pack(side="right")
         self._btn_close = ttk.Button(nav, text="Schließen", command=self._close)
-        self._btn_close.pack(side="left", padx=(8, 0))
+        self._btn_close.pack(side="left", padx=(theme.SP_SM, 0))
 
         self.protocol("WM_DELETE_WINDOW", self._close)
         self._render_step()
@@ -159,6 +178,15 @@ class SetupWizard(tk.Toplevel):
         self._clear_body()
         self._btn_back.state(["!disabled"] if self._step > 0 else ["disabled"])
         self._btn_next.configure(text="Fertig" if self._step == self._TOTAL_STEPS - 1 else "Weiter")
+        # Aktiver Schritt als Akzent-Punkt, zurückliegende als ausgefüllt, kommende
+        # als blass — gibt Orientierung ohne Bewegung (Tk kann keine Spring-Anim).
+        for i, dot in enumerate(self._dots):
+            if i == self._step:
+                dot.configure(text="●", foreground=theme.ACCENT)
+            elif i < self._step:
+                dot.configure(text="●", foreground=theme.TEXT_MUTED)
+            else:
+                dot.configure(text="○", foreground=theme.TEXT_MUTED)
         if self._step == self._ENV_STEP_INDEX:
             self._render_env_step()
         else:
@@ -171,9 +199,10 @@ class SetupWizard(tk.Toplevel):
         self._header.configure(
             text=f"Schritt {self._step + 1} von {self._TOTAL_STEPS}: {step.title}"
         )
-        ttk.Label(self._body, text=step.subtitle, wraplength=580, justify="left").pack(
-            anchor="w", pady=(0, 8)
-        )
+        ttk.Label(
+            self._body, text=step.subtitle, style=theme.MUTED_LABEL,
+            wraplength=620, justify="left",
+        ).pack(anchor="w", pady=(0, theme.SP_MD))
 
         already_ready = step.ready_check()
         if already_ready:
@@ -188,12 +217,12 @@ class SetupWizard(tk.Toplevel):
         btn = ttk.Button(
             self._body,
             text="Jetzt einrichten",
-            style="Primary.TButton",
+            style=theme.PRIMARY_BUTTON,
             command=lambda: self._run_install(step, log, busy),
         )
-        btn.pack(anchor="w", pady=(0, 8))
+        btn.pack(anchor="w", pady=(0, theme.SP_SM))
         busy = BusyBar(self._body)
-        busy.pack(fill="x", pady=(0, 8))
+        busy.pack(fill="x", pady=(0, theme.SP_SM))
         log = LogView(self._body, height=10)
         log.pack(fill="both", expand=True)
         self._install_button = btn
@@ -206,7 +235,7 @@ class SetupWizard(tk.Toplevel):
         self._btn_next.state(["disabled"])
         self._btn_skip.state(["disabled"])
         self._btn_back.state(["disabled"])
-        busy.start()
+        busy.start("Einrichtung läuft …")
 
         def log_line(line: str) -> None:
             self.after(0, lambda: log.append(line))
@@ -266,16 +295,17 @@ class SetupWizard(tk.Toplevel):
         for key, label, masked in envtool.FORM_FIELDS:
             f = FormField(self._body, label=label, masked=masked)
             f.set(values.get(key, ""))
-            f.pack(fill="x", pady=2)
+            f.pack(fill="x", pady=theme.SP_XS)
             fields[key] = f
 
         def on_save() -> None:
             envtool.write_form({k: f.get() for k, f in fields.items()})
             self._banner.set_text("Zugangsdaten gespeichert.", "success")
 
-        ttk.Button(self._body, text="Zugangsdaten speichern", command=on_save).pack(
-            anchor="w", pady=(8, 0)
-        )
+        ttk.Button(
+            self._body, text="Zugangsdaten speichern",
+            style=theme.SECONDARY_BUTTON, command=on_save,
+        ).pack(anchor="w", pady=(theme.SP_SM, 0))
 
 
 def open_wizard(parent: tk.Widget, on_finish: Callable[[], None] | None = None) -> SetupWizard:
