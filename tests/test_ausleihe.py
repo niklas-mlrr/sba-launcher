@@ -52,3 +52,45 @@ def test_konstanten_konsistent() -> None:
     assert aa.AUSLEIHE_REPOS == ("ausleihe-api", "ausleihe-ausgabe")
     assert aa.HOST_PATH == "/host"
     assert aa.SUMATRA_HINT  # non-empty Hinweis
+
+
+# --- _venv_is_stale: erkennt einen venv, dessen Console-Script-Pfade ins
+# Leere zeigen (Verzeichnis wurde nach venv-Erstellung umbenannt/verschoben). ---
+
+def _write_console_script(bin_dir: Path, name: str, python_ref: str) -> None:
+    """Schreibt ein uv-artiges Console-Script mit gebacktem Python-Pfad."""
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    (bin_dir / name).write_text(
+        f"#!/bin/sh\n'exec' '{python_ref}' '-c' '' \"$@\"\n", encoding="utf-8"
+    )
+
+
+def test_venv_is_stale_ohne_venv(tmp_path: Path) -> None:
+    assert aa._venv_is_stale(tmp_path / ".venv") is False
+
+
+def test_venv_is_stale_frisch_am_aktuellen_ort(tmp_path: Path) -> None:
+    # Console-Script referenziert den venv-Python AM aktuellen Ort → existiert.
+    venv = tmp_path / ".venv"
+    py = venv / "bin" / "python3"
+    py.parent.mkdir(parents=True)
+    py.write_text("")  # existiert → Referenz gültig
+    _write_console_script(venv / "bin", "playwright", str(py))
+    assert aa._venv_is_stale(venv) is False
+
+
+def test_venv_is_stale_nach_rename(tmp_path: Path) -> None:
+    # venv am neuen Ort, aber Console-Script referenziert noch den ALTEN Pfad
+    # (der nicht mehr existiert) → stale.
+    old_python = tmp_path / "IServ-Ausleihe-Ausgabe" / ".venv" / "bin" / "python3"
+    venv = tmp_path / "ausleihe-ausgabe" / ".venv"
+    _write_console_script(venv / "bin", "playwright", str(old_python))
+    assert aa._venv_is_stale(venv) is True
+
+
+def test_venv_is_stale_ohne_console_scripts(tmp_path: Path) -> None:
+    # venv mit bin/, aber ohne Console-Scripts → nicht stale.
+    venv = tmp_path / ".venv"
+    (venv / "bin").mkdir(parents=True)
+    (venv / "bin" / "python3").write_text("")  # nur der Interpreter, kein Script
+    assert aa._venv_is_stale(venv) is False

@@ -20,6 +20,7 @@ Der dauerhafte Server nutzt den ``SubprocessManager`` (eigener Stream).
 from __future__ import annotations
 
 import contextlib
+import re
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -82,6 +83,60 @@ def _run_streaming(
     return proc.returncode
 
 
+# Muster für den absoluten venv-Python-Pfad, den uv in Console-Scripts
+# (``.venv/bin/<tool>``) bei der Erstellung reingebackt hat. uv-venvs sind
+# NICHT relocatable: wird das Projektverzeichnis danach umbenannt/verschoben
+# (hier: ``IServ-Ausleihe-Ausgabe`` → ``ausleihe-ausgabe``), zeigen diese
+# Pfade ins Leere — jeder Console-Script-Aufruf (z. B. ``playwright``)
+# scheitert mit Exit 126. ``uv sync`` fällt *nicht* darauf (nutzt den
+# venv-Python direkt per Symlink), daher braucht es eine eigene Prüfung.
+_VENV_PY_REF = re.compile(r"(/[^\s'\"\)]*?/\.venv/bin/python[\w.\-]*)")
+
+
+def _venv_is_stale(venv: Path) -> bool:
+    """``True`` gdw. der venv Console-Scripts enthält, deren gebackter absoluter
+    Python-Pfad nicht mehr existiert (Verzeichnis wurde umbenannt/verschoben).
+
+    ``False`` für: keinen venv, venv ohne Console-Scripts, oder einen am
+    aktuellen Ort korrekt funktionierenden venv (kein False-Positive bei
+    frischen/aktuellen venvs — deren Referenzpfad existiert ja).
+    """
+    bin_dir = venv / "bin"
+    if not bin_dir.is_dir():
+        return False
+    for script in bin_dir.iterdir():
+        if not script.is_file():
+            continue
+        # Nur Text-Console-Scripts (Symlinks/Binaries überspringen). Fehler
+        # beim Lesen (z. B. Permission) tolerieren wir als „nicht stale".
+        try:
+            head = script.read_text(errors="ignore")[:400]
+        except OSError:
+            continue
+        m = _VENV_PY_REF.search(head)
+        if m and not Path(m.group(1)).exists():
+            return True
+    return False
+
+
+def _recreate_venv(repo: Path, log: LogFn) -> None:
+    """Entfernt einen stale venv, damit ``uv sync`` ihn frisch neu anlegt.
+
+    Nur Console-Scripts sind kaputt (der venv-Python-Symlink funktioniert
+    noch). Der sauberste Weg zu korrekten Pfaden ist ein neuer venv.
+    ``.env`` liegt am Repo-Root (nicht im venv) → bleibt erhalten; die
+    Playwright-Browser liegen im OS-Cache (nicht im venv) → kein
+    Chromium-Neudownload. ``uv sync`` holt Pakete aus dem uv-Cache (schnell).
+    """
+    import shutil
+
+    log(
+        f"[ausleihe-ausgabe] venv ist veraltet (Verzeichnis verschoben/"
+        f"umbenannt) — wird neu erstellt: {repo / '.venv'}"
+    )
+    shutil.rmtree(repo / ".venv", ignore_errors=True)
+
+
 def install(log: LogFn) -> None:
     """Klont beide Repos, ``uv sync``, ``playwright install chromium``.
 
@@ -101,8 +156,11 @@ def install(log: LogFn) -> None:
         log(f"[{name}] clone ok")
 
     # 2. uv sync im Hauptwerkzeug (bindet ../ausleihe-api als editable Install).
+    aa_repo = paths.sibling("ausleihe-ausgabe")
+    if _venv_is_stale(aa_repo / ".venv"):
+        _recreate_venv(aa_repo, log)
     log("[ausleihe-ausgabe] uv sync …")
-    rc = _run_streaming(["uv", "sync"], log=log, cwd=paths.sibling("ausleihe-ausgabe"))
+    rc = _run_streaming(["uv", "sync"], log=log, cwd=aa_repo)
     if rc != 0:
         raise RuntimeError(f"uv sync fehlgeschlagen (Exit {rc})")
 
@@ -140,7 +198,10 @@ def update(log: LogFn) -> dict[str, gitops.RepoStatus]:
             log(out)
 
     log("[ausleihe-ausgabe] uv sync …")
-    rc = _run_streaming(["uv", "sync"], log=log, cwd=paths.sibling("ausleihe-ausgabe"))
+    aa_repo = paths.sibling("ausleihe-ausgabe")
+    if _venv_is_stale(aa_repo / ".venv"):
+        _recreate_venv(aa_repo, log)
+    rc = _run_streaming(["uv", "sync"], log=log, cwd=aa_repo)
     if rc != 0:
         raise RuntimeError(f"uv sync fehlgeschlagen (Exit {rc})")
 
