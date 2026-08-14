@@ -418,15 +418,15 @@ class StatusBar(ttk.Frame):
         self._textcol.pack(side="left", fill="both", expand=True)
         self._headline = tk.Label(
             self._textcol, text="", font=theme.SUBHEADING, anchor="w",
-            justify="left", pady=(theme.SP_MD, 0), background=theme.INFO_BG,
+            justify="left", pady=0, background=theme.INFO_BG,
         )
-        self._headline.pack(fill="x")
+        self._headline.pack(fill="x", pady=(theme.SP_MD, 0))
         self._detail = tk.Label(
             self._textcol, text="", font=theme.BODY, anchor="w", justify="left",
-            wraplength=700, pady=(0, theme.SP_MD), background=theme.INFO_BG,
+            wraplength=700, pady=0, background=theme.INFO_BG,
             foreground=theme.TEXT_MUTED,
         )
-        self._detail.pack(fill="x")
+        self._detail.pack(fill="x", pady=(0, theme.SP_MD))
         self._action: ttk.Button | None = None
         self.set(kind, headline, detail)
 

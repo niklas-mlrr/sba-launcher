@@ -119,9 +119,9 @@ class HomeTab(ttk.Frame):
         self._readiness_row = ttk.Frame(top)
         self._readiness_row.pack(fill="x", pady=(theme.SP_SM, 0))
         self._readiness_glyph = tk.Label(
-            self._readiness_row, text="", font=theme.BODY_BOLD, padx=(0, theme.SP_XS)
+            self._readiness_row, text="", font=theme.BODY_BOLD, padx=0
         )
-        self._readiness_glyph.pack(side="left")
+        self._readiness_glyph.pack(side="left", padx=(0, theme.SP_XS))
         self._readiness_label = tk.Label(
             self._readiness_row, text="", font=theme.BODY, anchor="w"
         )
