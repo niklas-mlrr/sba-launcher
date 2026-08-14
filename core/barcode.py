@@ -155,12 +155,10 @@ def install(log: LogFn) -> None:
     log("[barcode-simple] npm install (server) …")
     env = prereqs.node_env()
     npm = prereqs.npm_bin()
-    # Windows: npm ist eine .cmd → shell=True mit dem aufgelösten Pfad.
-    # POSIX: npm ist ein Skript → shell=False mit Liste.
-    if os.name == "nt":
-        rc = run_streaming(f'"{npm}" install', log=log, cwd=server_dir(), env=env, shell=True)
-    else:
-        rc = run_streaming([npm, "install"], log=log, cwd=server_dir(), env=env)
+    # List form ohne shell=True: npm_bin() liefert auf Windows den vollen Pfad
+    # zur npm.cmd (via shutil.which + PATHEXT); CreateProcess führt .cmd direkt
+    # aus. Auf POSIX ist npm ein normales Skript.
+    rc = run_streaming([npm, "install"], log=log, cwd=server_dir(), env=env)
     if rc != 0:
         raise RuntimeError(f"npm install fehlgeschlagen (Exit {rc})")
 
@@ -192,10 +190,7 @@ def update(log: LogFn) -> gitops.RepoStatus:
     env = prereqs.node_env()
     npm = prereqs.npm_bin()
     log("[barcode-simple] npm install (server) …")
-    if os.name == "nt":
-        rc = run_streaming(f'"{npm}" install', log=log, cwd=server_dir(), env=env, shell=True)
-    else:
-        rc = run_streaming([npm, "install"], log=log, cwd=server_dir(), env=env)
+    rc = run_streaming([npm, "install"], log=log, cwd=server_dir(), env=env)
     if rc != 0:
         raise RuntimeError(f"npm install fehlgeschlagen (Exit {rc})")
 

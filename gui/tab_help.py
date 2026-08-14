@@ -210,7 +210,7 @@ class HelpTab(ttk.Frame):
             return
         try:
             if os.name == "nt":
-                os.startfile(path)  # type: ignore[attr-defined]
+                os.startfile(str(path))  # type: ignore[attr-defined]
             else:
                 webbrowser.open(path.as_uri())
         except OSError as exc:

@@ -14,7 +14,7 @@ from __future__ import annotations
 import threading
 import tkinter as tk
 from collections.abc import Callable
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
 from core import ausleihe_ausgabe as aa
 from core import barcode as bc
@@ -166,6 +166,13 @@ class SetupWizard(tk.Toplevel):
         self._render_step()
 
     def _close(self) -> None:
+        if self._busy:
+            messagebox.showinfo(
+                "Einrichtung läuft",
+                "Die Einrichtung läuft noch. Bitte warten, bis sie abgeschlossen ist.",
+                parent=self,
+            )
+            return
         if self._on_finish is not None:
             self._on_finish()
         self.destroy()
@@ -214,6 +221,8 @@ class SetupWizard(tk.Toplevel):
         self._btn_skip.state(["!disabled"] if not step.required else ["disabled"])
         self._btn_next.state(["!disabled"] if already_ready else ["disabled"])
 
+        busy = BusyBar(self._body)
+        log = LogView(self._body, height=10)
         btn = ttk.Button(
             self._body,
             text="Jetzt einrichten",
@@ -221,12 +230,10 @@ class SetupWizard(tk.Toplevel):
             command=lambda: self._run_install(step, log, busy),
         )
         btn.pack(anchor="w", pady=(0, theme.SP_SM))
-        busy = BusyBar(self._body)
         busy.pack(fill="x", pady=(0, theme.SP_SM))
         Eyebrow(self._body, text="Protokoll · für die Fehlersuche").pack(
             anchor="w", pady=(0, theme.SP_XS)
         )
-        log = LogView(self._body, height=10)
         log.pack(fill="both", expand=True)
         self._install_button = btn
 
@@ -256,6 +263,8 @@ class SetupWizard(tk.Toplevel):
     def _install_done(
         self, step: _InstallStep, log: LogView, busy: BusyBar, ok: bool, error: str = ""
     ) -> None:
+        if not self.winfo_exists():
+            return
         busy.stop()
         self._busy = False
         self._btn_back.state(["!disabled"])

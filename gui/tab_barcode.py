@@ -257,6 +257,8 @@ class BarcodeTab(ttk.Frame):
         wird der grafische QR aktualisiert. Einmal aufgerufen, läuft der Loop
         selbst weiter (bis das Widget zerstört wird).
         """
+        if not self.winfo_exists():
+            return
         for ln in self._server_mgr.poll_lines():
             self._log.append(ln)
             url = bc.parse_scanner_url(ln)

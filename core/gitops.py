@@ -93,12 +93,17 @@ def status(name: str) -> RepoStatus:
         return RepoStatus(name, path, installed=False, branch=None, dirty=False, error=None)
 
     branch_proc = _run(["rev-parse", "--abbrev-ref", "HEAD"], path)
-    dirty_proc = _run(["status", "--porcelain"], path)
-
-    error: str | None = None
     if not _git_ok(branch_proc):
+        # rev-parse scheitert (z. B. halbes .git) → dirty ist sinnlos;
+        # gar nicht erst fragen, stattdessen sauber mit dirty=False melden.
         error = branch_proc.stderr or branch_proc.stdout or "rev-parse fehlgeschlagen"
-    elif not _git_ok(dirty_proc):
+        return RepoStatus(
+            name, path, installed=True, branch=None, dirty=False, error=error
+        )
+
+    dirty_proc = _run(["status", "--porcelain"], path)
+    error: str | None = None
+    if not _git_ok(dirty_proc):
         error = dirty_proc.stderr or dirty_proc.stdout or "status fehlgeschlagen"
 
     branch = branch_proc.stdout.strip() or None

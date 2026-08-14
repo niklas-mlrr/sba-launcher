@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from core import ausleihe_ausgabe as aa
 from core import barcode as bc
 from core import bestand as bst
-from core import gitops, paths, prereqs
+from core import envtool, gitops, prereqs
 
 
 @dataclass(frozen=True)
@@ -42,7 +42,7 @@ class ToolStatus:
 def ausleihe_status(running: bool = False) -> ToolStatus:
     """Bereitschaft von ausleihe-ausgabe (beide Repos + ``.env``)."""
     installed = all(gitops.status(name).installed for name in aa.AUSLEIHE_REPOS)
-    env_ready = paths.env_file("ausleihe-ausgabe").is_file()
+    env_ready = envtool.is_ready("ausleihe-ausgabe")
     ready = installed and env_ready
     if running:
         detail = "läuft"
@@ -56,10 +56,19 @@ def ausleihe_status(running: bool = False) -> ToolStatus:
 
 
 def bestand_status() -> ToolStatus:
-    """Bereitschaft der Bestandsliste (Repo + eigenes Venv)."""
+    """Bereitschaft der Bestandsliste (Repo + ``.env`` + eigenes Venv)."""
     installed = gitops.status("ausleihe-api").installed
-    ready = installed and bst.bestand_venv_python().is_file()
-    detail = "bereit" if ready else ("wird noch vorbereitet" if installed else "Einrichtung nötig")
+    env_ready = envtool.is_ready("ausleihe-api")
+    venv_ready = bst.bestand_venv_python().is_file()
+    ready = installed and env_ready and venv_ready
+    if ready:
+        detail = "bereit"
+    elif not installed:
+        detail = "Einrichtung nötig"
+    elif not env_ready:
+        detail = "Zugangsdaten fehlen"
+    else:
+        detail = "wird noch vorbereitet"
     return ToolStatus("bestand", "Bestandsliste", installed, ready, False, detail)
 
 

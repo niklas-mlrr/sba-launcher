@@ -329,7 +329,7 @@ class AusleiheTab(ttk.Frame):
         → Verwaltung öffnen; nicht eingerichtet → Einrichtung starten.
         """
         installed = all(gitops.status(name).installed for name in aa.AUSLEIHE_REPOS)
-        env_ready = paths.env_file("ausleihe-ausgabe").is_file()
+        env_ready = envtool.is_ready("ausleihe-ausgabe")
         running = self._manager.is_running()
         if running:
             self._btn_primary.configure(

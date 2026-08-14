@@ -20,6 +20,7 @@ deskriptiv, alle Zustände/Validierung liegen in ``core/``.
 
 from __future__ import annotations
 
+import contextlib
 import tkinter as tk
 from collections.abc import Callable
 from tkinter import messagebox, ttk
@@ -105,6 +106,8 @@ class LogView(ttk.Frame):
         Einmal aufgerufen, läuft die Schleife selbst weiter (bis das Widget
         zerstört wird). Leere Queue = kein Output, kein Aufwand.
         """
+        if not self.winfo_exists():
+            return
         lines = manager.poll_lines()
         if lines:
             self.append_lines(lines)
@@ -195,10 +198,12 @@ class Tooltip:
 
     def hide(self, _event: tk.Event | None = None) -> None:
         if self._job is not None:
-            self.widget.after_cancel(self._job)
+            with contextlib.suppress(tk.TclError):
+                self.widget.after_cancel(self._job)
             self._job = None
         if self._window is not None:
-            self._window.destroy()
+            with contextlib.suppress(tk.TclError):
+                self._window.destroy()
             self._window = None
 
 

@@ -76,6 +76,8 @@ class BestandTab(ttk.Frame):
         self._busy = False
         self._excel_path: Path | None = None
         self._katalog: catalog.Katalog = catalog.Katalog(schule="", schuljahr="")
+        self._catalog_btns: list[ttk.Button] = []
+        self._iid_map: dict[str, str] = {}
         self._build()
         self._load_config_into_form()
         self._load_katalog()
@@ -221,6 +223,7 @@ class BestandTab(ttk.Frame):
         bar.pack(fill="x", padx=theme.SP_SM, pady=(theme.SP_XS, theme.SP_SM))
         for c in (0, 2, 4):
             bar.columnconfigure(c, weight=1, uniform="c")
+        self._catalog_btns = []
 
         clusters: tuple[tuple[str, tuple[tuple[str, object, str], ...]], ...] = (
             (
@@ -268,6 +271,7 @@ class BestandTab(ttk.Frame):
                 b = ttk.Button(row, text=text, style=theme.SECONDARY_BUTTON, command=cmd)
                 b.pack(side="left", padx=(0, theme.SP_XS))
                 add_tooltip(b, tip)
+                self._catalog_btns.append(b)
             if ci < 2:
                 ttk.Separator(bar, orient="vertical").grid(
                     row=0, column=col + 1, sticky="ns", padx=theme.SP_SM
@@ -424,13 +428,26 @@ class BestandTab(ttk.Frame):
         self._populate_tree()
 
     def _populate_tree(self) -> None:
-        """Zeigt ``self._katalog`` im Treeview (sortiert wie der Katalog)."""
+        """Zeigt ``self._katalog`` im Treeview (sortiert wie der Katalog).
+
+        Iids werden dedupliziert: bei gleichen ``e.id`` (mehrere Einträge mit
+        gleicher Identität) wird ein Suffix ``#2``, ``#3`` … angehängt, damit
+        ``Treeview.insert`` kein ``TclError`` wirft. ``self._iid_map`` bildet
+        die Treeview-Iid auf die echte ``eintrag.id`` ab.
+        """
         self._tree.delete(*self._tree.get_children())
+        self._iid_map.clear()
+        seen: dict[str, int] = {}
         for e in self._katalog.eintraege:
+            base = e.id
+            count = seen.get(base, 0)
+            seen[base] = count + 1
+            iid = base if count == 0 else f"{base}#{count + 1}"
+            self._iid_map[iid] = base
             self._tree.insert(
                 "",
                 "end",
-                iid=e.id,
+                iid=iid,
                 values=(
                     e.fach,
                     e.hint or "",
@@ -464,6 +481,8 @@ class BestandTab(ttk.Frame):
 
     def on_katalog_import(self) -> None:
         """Importiert eine Bestand-Excel (+ mappings aus config.json) in den Katalog."""
+        if self._busy:
+            return
         path = filedialog.askopenfilename(
             title="Bestand-Excel zum Import wählen", filetypes=_EXCEL_FILETYPES
         )
@@ -481,16 +500,20 @@ class BestandTab(ttk.Frame):
                     Path(path), mappings, sheet_name=cfg.sheet_name,
                     schule=self._katalog.schule, schuljahr=self._katalog.schuljahr,
                 )
-                self._katalog = kat
-                self.after(0, self._populate_tree)
+                self.after(0, lambda: self._finish_import(kat))
                 log(f"Buchdaten übernommen: {len(kat.eintraege)} Einträge.")
             except Exception as e:  # noqa: BLE001
                 log(f"Buchdaten konnten nicht übernommen werden: {e}")
+            finally:
+                self.after(0, self._end_catalog_busy)
 
+        self._begin_catalog_busy()
         threading.Thread(target=worker, daemon=True).start()
 
     def on_katalog_render(self) -> None:
         """Erzeugt eine Excel-Datei aus der mitgelieferten Vorlage."""
+        if self._busy:
+            return
         template = paths.templates_dir() / "Bestand-Vorlage.xlsx"
         if not template.is_file():
             messagebox.showerror(
@@ -524,8 +547,32 @@ class BestandTab(ttk.Frame):
                     log("Alle Buch-Zuordnungen wurden übernommen.")
             except Exception as e:  # noqa: BLE001
                 log(f"Neue Excel-Datei konnte nicht erstellt werden: {e}")
+            finally:
+                self.after(0, self._end_catalog_busy)
 
+        self._begin_catalog_busy()
         threading.Thread(target=worker, daemon=True).start()
+
+    def _begin_catalog_busy(self) -> None:
+        """Sperrt die Katalog-Buttons während eines Hintergrund-Imports/-Renders."""
+        self._busy = True
+        for b in self._catalog_btns:
+            b.state(["disabled"])
+
+    def _end_catalog_busy(self) -> None:
+        """Gibt die Katalog-Buttons nach einem Hintergrund-Import/-Render frei."""
+        self._busy = False
+        for b in self._catalog_btns:
+            b.state(["!disabled"])
+
+    def _finish_import(self, kat: catalog.Katalog) -> None:
+        """Übernimmt den importierten Katalog im GUI-Thread (thread-safe).
+
+        Wird via ``after(0, …)`` aus dem Worker gerufen — ``self._katalog`` darf
+        nur auf dem Tk-Main-Thread mutiert werden, sonst racet der Treeview-Zugriff.
+        """
+        self._katalog = kat
+        self._populate_tree()
 
     def on_katalog_sync(self) -> None:
         """Schreibt ``match_overrides`` aus dem Katalog in die config.json."""
@@ -559,7 +606,7 @@ class BestandTab(ttk.Frame):
         sel = self._tree.selection()
         if not sel:
             return
-        eid = sel[0]
+        eid = self._iid_map.get(sel[0], sel[0])
         eintrag = next((e for e in self._katalog.eintraege if e.id == eid), None)
         if eintrag is None:
             return
@@ -579,7 +626,7 @@ class BestandTab(ttk.Frame):
         sel = self._tree.selection()
         if not sel:
             return
-        eid = sel[0]
+        eid = self._iid_map.get(sel[0], sel[0])
         eintrag = next((e for e in self._katalog.eintraege if e.id == eid), None)
         label = (
             f"{eintrag.fach} Jg.{eintrag.jahrgang_von}-{eintrag.jahrgang_bis}"
@@ -646,6 +693,13 @@ class BestandTab(ttk.Frame):
                 messagebox.showerror(
                     "Eingabe prüfen",
                     "Die beiden Jahrgangsfelder müssen ganze Zahlen sein.",
+                    parent=dlg,
+                )
+                return
+            if von > bis:
+                messagebox.showerror(
+                    "Eingabe prüfen",
+                    "Der Jahrgang „von” darf nicht größer sein als der Jahrgang „bis”.",
                     parent=dlg,
                 )
                 return

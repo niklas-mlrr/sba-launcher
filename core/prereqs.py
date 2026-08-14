@@ -169,7 +169,11 @@ def node_env(base: dict[str, str] | None = None) -> dict[str, str]:
     if _which("node") is None:
         pdir = portable_node_dir()
         if (pdir / "node.exe").is_file():
-            env["PATH"] = os.pathsep.join([str(pdir), env.get("PATH", "")])
+            # Nur nicht-leeren PATH anhängen — sonst entsteht ein trailing
+            # pathsep (leeres PATH-Element = CWD, unerwünscht).
+            env["PATH"] = os.pathsep.join(
+                [str(pdir)] + ([env["PATH"]] if env.get("PATH") else [])
+            )
     return env
 
 
@@ -192,8 +196,9 @@ def node_bin() -> str:
 def npm_bin() -> str:
     """Absoluter Pfad zu ``npm`` (System oder portabel) oder ``"npm"``.
 
-    Auf Windows liefert das die ``npm.cmd`` — zusammen mit ``shell=True``
-    beim Subprocess-Aufruf robust ausführbar.
+    Auf Windows liefert ``shutil.which`` via PATHEXT die ``npm.cmd`` — der
+    volle Pfad wird als List-Element (ohne ``shell=True``) an Subprocess
+    gereicht; ``CreateProcess`` führt ``.cmd`` direkt aus.
     """
     return _resolve("npm", node_env())
 
@@ -242,10 +247,27 @@ def _download_portable_node(log: Callable[[str], None]) -> None:
     tools.mkdir(parents=True, exist_ok=True)
     zip_path = tools / f"node-{NODE_VERSION}-win-x64.zip"
     log(f"Lade portables Node herunter: {NODE_DOWNLOAD_URL}")
-    urllib.request.urlretrieve(NODE_DOWNLOAD_URL, str(zip_path))
-    log("Entpacke portables Node …")
-    with zipfile.ZipFile(zip_path) as z:
-        # ``extractall`` legt das Top-Level-Verzeichnis (portable_node_dir)
-        # selbst an — kein manuelles Verschieben nötig.
-        z.extractall(tools)
+    try:
+        # urlopen mit Timeout (urlretrieve hat keins); streaming auf Platte,
+        # nicht ins RAM laden. TODO: SHA-256-Pinning fehlt — Trust-on-First-
+        # Use des nodejs.org-TLS-Zerts; bei Bedarf hier nachrüsten.
+        with (
+            urllib.request.urlopen(NODE_DOWNLOAD_URL, timeout=120) as resp,
+            open(zip_path, "wb") as f,
+        ):
+            shutil.copyfileobj(resp, f, length=65536)
+        log("Entpacke portables Node …")
+        with zipfile.ZipFile(zip_path) as z:
+            # ``extractall`` legt das Top-Level-Verzeichnis (portable_node_dir)
+            # selbst an — kein manuelles Verschieben nötig.
+            z.extractall(tools)
+    except BaseException:
+        # Teil-Zip und halb entpacktes node-<ver>-win-x64-Verzeichnis
+        # entfernen — sonst denkt ensure_node beim nächsten Versuch, Node sei
+        # da (portable_node_exe() findet eine kaputte node.exe).
+        zip_path.unlink(missing_ok=True)
+        pdir = portable_node_dir()
+        if pdir.exists():
+            shutil.rmtree(pdir, ignore_errors=True)
+        raise
     zip_path.unlink(missing_ok=True)

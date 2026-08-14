@@ -23,16 +23,17 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# sba-launcher-Root (für ``core.catalog``) + Bestand-Dir (für ``update_bestand_auto``)
-# in den Pfad nehmen. Reihenfolge: Bestand zuerst, damit update_bestand_auto sein
-# eigenes sys.path-Setup (_ROOT = parent.parent) ungestört vorfindet.
+# sba-launcher-Root (für ``core.catalog`` + ``core.paths``) + Bestand-Dir (für
+# ``update_bestand_auto``) in den Pfad nehmen. Reihenfolge: Bestand zuerst,
+# damit update_bestand_auto sein eigenes sys.path-Setup (_ROOT = parent.parent)
+# ungestört vorfindet.
 LAUNCHER = Path(__file__).resolve().parent.parent
-BESTAND = (
-    Path.home()
-    / "projects/sba/ausleihe-api/bestand- und nachbestellungen/New - API approach"
-)
-sys.path.insert(0, str(BESTAND))
 sys.path.insert(0, str(LAUNCHER))
+
+from core import paths  # noqa: E402
+
+BESTAND = paths.sibling("ausleihe-api") / "bestand- und nachbestellungen/New - API approach"
+sys.path.insert(0, str(BESTAND))
 
 import update_bestand_auto as auto  # noqa: E402
 from ausleihe import AusleiheClient  # noqa: E402
@@ -45,6 +46,17 @@ EXCEL = BESTAND / "Bestand- und Nachbestellungsliste 2026.xlsx"
 CONFIG = BESTAND / "config.json"
 SCHULE = "TRG Osterode"
 SCHULJAHR = "2026/2027"
+
+
+def _to_float(value) -> float:
+    """Wandelt einen Preis-Wert in float; Komma-Dezimaltrenner → Punkt.
+
+    Fehlt oder unparsebar → 0.0 (sensible Default für fehlende Neupreise).
+    """
+    try:
+        return float(str(value).replace(",", "."))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def main() -> None:
@@ -132,7 +144,7 @@ def main() -> None:
                     hint=hint,
                     titel=str(sd.get("title", "") or ""),
                     verlag=str(sd.get("publisher", "") or ""),
-                    neupreis=float(sd.get("price", 0) or 0),
+                    neupreis=_to_float(sd.get("price", 0)),
                 )
             )
 
