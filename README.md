@@ -28,6 +28,12 @@ Beim ersten Start werden benötigte Grundprogramme automatisch vorbereitet. Das
 Fenster darf währenddessen nicht geschlossen werden. Eine Internetverbindung
 wird nur für die Einrichtung oder eine Aktualisierung benötigt.
 
+Hinweis: Fehlt `uv`, lädt `start.bat` es automatisch per
+`irm https://astral.sh/uv/install.ps1 | iex` herunter — ohne Prüfsummenprüfung
+(Vertrauen auf das TLS-Zertifikat von astral.sh). Schlägt das fehl, zeigt
+`start.bat` die manuelle Installationsanleitung
+(https://docs.astral.sh/uv/getting-started/installation/) an.
+
 ## 2. Einmalige Einrichtung
 
 Die Einrichtung muss normalerweise nur einmal pro Laptop gemacht werden.
