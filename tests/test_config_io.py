@@ -11,19 +11,16 @@ from pathlib import Path
 
 import pytest
 
-from core import config_io, paths
+from core import config_io
 
 
 @pytest.fixture
-def fake_bestand_repo(tmp_path: Path, monkeypatch) -> Path:
+def fake_bestand_repo(umbrella: Path) -> Path:
     """Biegt den Launcher-Root auf tmp; legt das Bestand-Dir (ohne config) an."""
-    launcher = tmp_path / "sba-launcher"
-    launcher.mkdir()
-    monkeypatch.setattr(paths, "launcher_root", lambda: launcher)
     # ausleihe-api existiert als Verzeichnis (config_path() zeigt dorthin).
-    (launcher / ".." / "ausleihe-api" / "bestand- und nachbestellungen" /
+    (umbrella / "ausleihe-api" / "bestand- und nachbestellungen" /
      "New - API approach").mkdir(parents=True)
-    return launcher
+    return umbrella / "sba-launcher"
 
 
 def _cfg_path() -> Path:

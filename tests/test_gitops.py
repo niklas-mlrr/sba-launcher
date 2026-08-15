@@ -39,15 +39,6 @@ def _make_remote(tmp_path: Path) -> Path:
     return remote
 
 
-@pytest.fixture
-def umbrella(tmp_path: Path, monkeypatch) -> Path:
-    """Umbrella-Layout: ``tmp_path/sba-launcher`` → siblings via ``../<name>``."""
-    launcher = tmp_path / "sba-launcher"
-    launcher.mkdir()
-    monkeypatch.setattr(paths, "launcher_root", lambda: launcher)
-    return tmp_path
-
-
 # --- status / is_dirty ----------------------------------------------------
 
 def test_status_nicht_installiert(umbrella: Path) -> None:

@@ -6,28 +6,26 @@ umgebogen, sodass echte ``.env``-Dateien unangetastet bleiben.
 
 from __future__ import annotations
 
+import stat
 from pathlib import Path
 
 import pytest
 
 from core import envtool, paths
+from core.config_io import _atomic_write_text
 
 
 @pytest.fixture
-def fake_repos(tmp_path: Path, monkeypatch):
-    """Richtet ein Umbrella-Layout unter ``tmp_path`` ein.
+def fake_repos(umbrella: Path):
+    """Richtet die Geschwister-Repo-Verzeichnisse im Umbrella-Layout ein.
 
-    ``launcher_root`` wird auf ``tmp_path/sba-launcher`` gebogen, sodass
-    ``sibling(name) = tmp_path/<name>`` (über ``..``) — echte Isolation pro
-    Test, kein shared State in ``/tmp``.
+    ``umbrella`` (aus ``conftest.py``) biegt ``launcher_root`` bereits auf
+    ``tmp_path/sba-launcher``, sodass ``sibling(name) = tmp_path/<name>``
+    (über ``..``) — echte Isolation pro Test, kein shared State in ``/tmp``.
     """
-    umbrella = tmp_path
-    launcher = umbrella / "sba-launcher"
-    launcher.mkdir()
     for repo in ("ausleihe-ausgabe", "ausleihe-api"):
         (umbrella / repo).mkdir()
-    monkeypatch.setattr(paths, "launcher_root", lambda: launcher)
-    return launcher
+    return umbrella / "sba-launcher"
 
 
 # --- parse_env_text / mask_value -----------------------------------------
@@ -227,3 +225,38 @@ def test_is_ready_true_ausleihe_api_mit_drei_keys(fake_repos) -> None:
 
 def test_is_ready_false_fuer_unbekanntes_repo(fake_repos) -> None:
     assert envtool.is_ready("unbekannt") is False
+
+
+# --- Wave 1: None-Werte werden zu "" statt Literal-String "None" -----------
+
+
+def test_write_env_none_wert_wird_leerstring_nicht_literal_none(tmp_path: Path) -> None:
+    p = tmp_path / "none.env"
+    envtool.write_env(p, {"ISERV_DOMAIN": None})  # type: ignore[dict-item]
+    text = p.read_text(encoding="utf-8")
+    assert "ISERV_DOMAIN=\n" in text
+    assert "None" not in text
+
+
+def test_write_form_none_wert_wird_leerstring_nicht_literal_none(fake_repos) -> None:
+    values = {
+        "ISERV_DOMAIN": None,
+        "ISERV_USERNAME": None,
+        "ISERV_PASSWORD": None,
+        "HOST_PASSWORD": None,
+    }
+    envtool.write_form(values)  # type: ignore[arg-type]
+    for repo in ("ausleihe-ausgabe", "ausleihe-api"):
+        text = paths.env_file(repo).read_text(encoding="utf-8")
+        assert "None" not in text
+
+
+# --- Wave 1: _atomic_write_text schließt das Umask-Fenster ------------------
+
+
+def test_atomic_write_text_datei_ist_0600_und_kein_tmp_uebrig(tmp_path: Path) -> None:
+    p = tmp_path / "secrets.env"
+    _atomic_write_text(p, "ISERV_PASSWORD=geheim\n")
+    mode = stat.S_IMODE(p.stat().st_mode)
+    assert mode == 0o600
+    assert not list(tmp_path.glob("*.tmp"))

@@ -30,10 +30,21 @@ target-version = "py312"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "TID"]
 ignore = [
     # SIM108: ternary `x if cond else y` statt if/else-Block — oft unleserlicher
     # bei längeren Ausdrücken (z. B. splitlines-if-is_file). Lesbarkeit schlägt.
     "SIM108",
 ]
 # gui/ darf tkinter nutzen (nicht auf dem headless VPS testbar); core/ bleibt tk-frei.
+
+# TID251 (banned-api) erzwingt das oben beschriebene core/-bleibt-tk-frei-Prinzip
+# maschinell statt nur per Doku: ``import tkinter`` ist repo-weit verboten außer
+# in gui/ (per-file-ignores unten hebt die Regel dort auf).
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"tkinter".msg = "core/ bleibt tk-frei (headless-VPS-Testbarkeit) — tkinter gehört in gui/."
+
+[tool.ruff.lint.per-file-ignores]
+"gui/*" = ["TID251"]
+# Smoke-Test konstruiert echte Tk-Widgets (root/Toplevel) — braucht tkinter direkt.
+"tests/test_gui_smoke.py" = ["TID251"]

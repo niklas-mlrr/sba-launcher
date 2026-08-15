@@ -18,16 +18,13 @@ import pytest
 
 from core import barcode as bc
 from core import paths
+from tests.conftest import make_repo
 
 
 @pytest.fixture
-def fake_barcode_repo(tmp_path: Path, monkeypatch) -> Path:
+def fake_barcode_repo(umbrella: Path) -> Path:
     """Biegt ``barcode-simple`` auf ein tmp-Repo (mit .git + runtime-Dir)."""
-    launcher = tmp_path / "sba-launcher"
-    launcher.mkdir()
-    monkeypatch.setattr(paths, "launcher_root", lambda: launcher)
-    repo = tmp_path / "barcode-simple"
-    (repo / ".git").mkdir(parents=True)
+    repo = make_repo(umbrella, "barcode-simple")
     (repo / "server" / "runtime").mkdir(parents=True)
     return repo
 
@@ -220,6 +217,23 @@ def test_start_hebt_wenn_node_fehlt(fake_barcode_repo: Path, monkeypatch) -> Non
     monkeypatch.setattr(bc.prereqs, "node_bin", lambda: "")
     with pytest.raises(FileNotFoundError, match="Node.js fehlt"):
         bc.start(FakeManager(), FakeManager(), lambda _l: None)
+
+
+def test_start_stoppt_server_wenn_client_start_wirft(
+    fake_barcode_repo: Path, monkeypatch
+) -> None:
+    """Wave 1: Client-Start-Fehler räumt den Server auf statt ihn verwaist zu lassen."""
+    _patch_start_voraussetzungen(fake_barcode_repo, monkeypatch)
+    monkeypatch.setattr(bc, "_wait_for_session", lambda sf, log: True)
+
+    class RaisingClient(FakeManager):
+        def start(self, cmd, cwd=None, env=None) -> None:
+            raise RuntimeError("client kaputt")
+
+    server, client = FakeManager(), RaisingClient()
+    with pytest.raises(RuntimeError, match="client kaputt"):
+        bc.start(server, client, lambda _l: None)
+    assert server.stop_calls == 1
 
 
 def test_start_stoppt_server_wenn_session_timeout(fake_barcode_repo: Path, monkeypatch) -> None:

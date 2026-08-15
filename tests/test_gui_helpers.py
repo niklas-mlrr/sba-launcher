@@ -10,26 +10,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
-from core import paths
 from core.status import ToolStatus
 from gui import _home_logic as hl
-
-
-@pytest.fixture
-def umbrella(tmp_path: Path, monkeypatch) -> Path:
-    launcher = tmp_path / "sba-launcher"
-    launcher.mkdir()
-    monkeypatch.setattr(paths, "launcher_root", lambda: launcher)
-    return tmp_path
-
-
-def _mark_installed(tmp_path: Path, name: str) -> Path:
-    repo = tmp_path / name
-    (repo / ".git").mkdir(parents=True)
-    return repo
-
+from tests.conftest import _mark_installed
 
 # --- state_for --------------------------------------------------------------
 

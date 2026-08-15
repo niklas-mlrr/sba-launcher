@@ -48,6 +48,17 @@ def test_stop_ohne_laufenden_prozess_liefert_none() -> None:
     assert not m.is_running()
 
 
+def test_stop_nach_natuerlichem_exit_liefert_echten_returncode() -> None:
+    """Wave 1: stop() nach eigenständigem Prozessende liefert rc, nicht None."""
+    m = SubprocessManager()
+    m.start([*_PY, "-c", "import sys; sys.exit(7)"])
+    deadline = time.monotonic() + 5.0
+    while m._process.poll() is None and time.monotonic() < deadline:  # noqa: SLF001
+        time.sleep(0.02)
+    assert m._process.poll() is not None  # noqa: SLF001
+    assert m.stop() == 7
+
+
 def test_doppel_start_hebt() -> None:
     m = SubprocessManager()
     m.start([*_PY, "-c", "import time; time.sleep(30)"])

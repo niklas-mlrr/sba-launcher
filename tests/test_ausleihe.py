@@ -13,17 +13,13 @@ import pytest
 
 from core import ausleihe_ausgabe as aa
 from core import envtool, paths
+from tests.conftest import make_repo
 
 
 @pytest.fixture
-def fake_aa_repo(tmp_path: Path, monkeypatch) -> Path:
+def fake_aa_repo(umbrella: Path) -> Path:
     """Biegt ``ausleihe-ausgabe`` auf ein tmp-Repo mit ``.env`` um."""
-    launcher = tmp_path / "sba-launcher"
-    launcher.mkdir()
-    monkeypatch.setattr(paths, "launcher_root", lambda: launcher)
-    repo = tmp_path / "ausleihe-ausgabe"
-    (repo / ".git").mkdir(parents=True)
-    return repo
+    return make_repo(umbrella, "ausleihe-ausgabe")
 
 
 def test_host_url_default_port_ohne_env(fake_aa_repo: Path) -> None:

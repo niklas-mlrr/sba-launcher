@@ -255,3 +255,51 @@ def test_save_katalog_hinterlässt_keine_tmp_datei(tmp_path: Path) -> None:
     assert p.is_file()
     # Atomarer Write via tmp+rename → keine Temp-Datei übrig.
     assert not list(tmp_path.glob("*.json.tmp"))
+
+
+def test_load_katalog_corrupt_json_routet_ueber_log_callback(tmp_path: Path) -> None:
+    """``log``-Callback bekommt die Warnung statt nur ``logging`` (Wave 1)."""
+    p = tmp_path / "katalog.json"
+    p.write_text("{kein gültiges json", encoding="utf-8")
+    logs: list[str] = []
+    k = catalog.load_katalog(p, log=logs.append)
+    assert k.eintraege == []
+    assert len(logs) == 1
+    assert "katalog.json" in logs[0]
+    assert "gültiges JSON" in logs[0]
+
+
+# --- Wave 1: invertierter Jahrgang-Bereich (Guard statt Crash) --------------
+
+
+def test_eintrag_vertauscht_invertierten_jahrgang_bereich() -> None:
+    """jahrgang_von > jahrgang_bis wird repariert (getauscht), kein Crash."""
+    e = catalog.Eintrag(fach="Deutsch", jahrgang_von=11, jahrgang_bis=5, isbn="x")
+    assert e.jahrgang_von == 5
+    assert e.jahrgang_bis == 11
+
+
+# --- Wave 1: kaputte Zellreferenz in mappings (Guard statt Abbruch) ---------
+
+
+def test_import_from_excel_ueberspringt_kaputte_zellreferenz(tmp_path: Path) -> None:
+    fx = _build_fixture(tmp_path)
+    mappings = [
+        {"isbn": _ISBN_DEU5, "bestand_cell": "A"},  # ungültige Koordinate
+        {"isbn": _ISBN_DEU6, "bestand_cell": "C4"},  # gültig, wird trotzdem importiert
+    ]
+    logs: list[str] = []
+    k = catalog.import_from_excel(fx, mappings, log=logs.append)
+    isbns = {e.isbn for e in k.eintraege}
+    assert _ISBN_DEU5 not in isbns
+    assert _ISBN_DEU6 in isbns
+    assert any("ungültige Zellreferenz" in ln for ln in logs)
+
+
+# --- import_from_excel: fehlendes Sheet --------------------------------------
+
+
+def test_import_from_excel_fehlendes_sheet_wirft(tmp_path: Path) -> None:
+    fx = _build_fixture(tmp_path)
+    with pytest.raises(ValueError, match="Sheet"):
+        catalog.import_from_excel(fx, _mappings_deu_erde(), sheet_name="Existiert nicht")

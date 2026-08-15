@@ -35,6 +35,9 @@ from core import paths  # noqa: E402
 BESTAND = paths.sibling("ausleihe-api") / "bestand- und nachbestellungen/New - API approach"
 sys.path.insert(0, str(BESTAND))
 
+# Hinweis für Tests: dieses Skript hängt von privaten APIs des Geschwister-Repos
+# ausleihe-api ab (``update_bestand_auto``, ``ausleihe.*``) — nicht Teil dieses
+# Repos' Testabdeckung, siehe tests/test_seed_from_iserv.py.
 import update_bestand_auto as auto  # noqa: E402
 from ausleihe import AusleiheClient  # noqa: E402
 from ausleihe.inventory_excel import match_book  # noqa: E402

@@ -40,7 +40,7 @@ NODE_DOWNLOAD_URL = (
 
 
 @dataclass(frozen=True)
-class ToolStatus:
+class ToolAvailability:
     """Erkennungs-Ergebnis für ein einzelnes Werkzeug.
 
     ``available`` über ``shutil.which`` (PATH) ODER bekannten absoluten Pfad.
@@ -79,15 +79,15 @@ def _version(cmd: list[str]) -> str | None:
     return text.splitlines()[0] if text else None
 
 
-def check_uv() -> ToolStatus:
+def check_uv() -> ToolAvailability:
     """Prüft ``uv`` im PATH. Wird von start.bat vorgebootet; hier nur Rückfrage."""
     found = _which("uv")
     if found:
-        return ToolStatus("uv", True, found, "PATH")
-    return ToolStatus("uv", False, None, "—")
+        return ToolAvailability("uv", True, found, "PATH")
+    return ToolAvailability("uv", False, None, "—")
 
 
-def check_git() -> ToolStatus:
+def check_git() -> ToolAvailability:
     """Prüft ``git`` im PATH (Standard auf dem Windows-Laptop der Ausleihe).
 
     Fallback-Pfad (Phase 1): PortableGit unter ``tools/git/bin`` voranstellen,
@@ -95,11 +95,11 @@ def check_git() -> ToolStatus:
     """
     found = _which("git")
     if found:
-        return ToolStatus("git", True, found, "PATH")
-    return ToolStatus("git", False, None, "—")
+        return ToolAvailability("git", True, found, "PATH")
+    return ToolAvailability("git", False, None, "—")
 
 
-def check_node() -> ToolStatus:
+def check_node() -> ToolAvailability:
     """Prüft ``node`` im PATH **oder** als entpacktes portables Node unter ``tools/``.
 
     Nur für den Barcode-Tab relevant. ``ensure_node()`` richtet das portable
@@ -107,14 +107,14 @@ def check_node() -> ToolStatus:
     """
     found = _which("node")
     if found:
-        return ToolStatus("node", True, found, "PATH")
+        return ToolAvailability("node", True, found, "PATH")
     portable = portable_node_exe()
     if portable is not None:
-        return ToolStatus("node", True, str(portable), "tools/" + portable.parent.name)
-    return ToolStatus("node", False, None, "—")
+        return ToolAvailability("node", True, str(portable), "tools/" + portable.parent.name)
+    return ToolAvailability("node", False, None, "—")
 
 
-def check_all() -> dict[str, ToolStatus]:
+def check_all() -> dict[str, ToolAvailability]:
     """Alle drei Werkzeuge auf einmal (für den Help-/Status-Tab)."""
     return {
         "uv": check_uv(),

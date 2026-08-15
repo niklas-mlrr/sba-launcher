@@ -10,26 +10,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from core import barcode as bc
 from core import bestand as bst
 from core import paths, prereqs, status
-
-
-@pytest.fixture
-def umbrella(tmp_path: Path, monkeypatch) -> Path:
-    launcher = tmp_path / "sba-launcher"
-    launcher.mkdir()
-    monkeypatch.setattr(paths, "launcher_root", lambda: launcher)
-    return tmp_path
-
-
-def _mark_installed(tmp_path: Path, name: str) -> Path:
-    repo = tmp_path / name
-    (repo / ".git").mkdir(parents=True)
-    return repo
-
+from tests.conftest import _mark_installed
 
 # --- ausleihe_status --------------------------------------------------------
 
@@ -122,7 +106,7 @@ def test_barcode_bereit(umbrella: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         status.prereqs,
         "check_node",
-        lambda: prereqs.ToolStatus("node", True, "/usr/bin/node", "PATH"),
+        lambda: prereqs.ToolAvailability("node", True, "/usr/bin/node", "PATH"),
     )
     st = status.barcode_status()
     assert st.ready

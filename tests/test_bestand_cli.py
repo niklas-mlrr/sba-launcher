@@ -14,16 +14,13 @@ import pytest
 
 from core import bestand as bst
 from core import paths
+from tests.conftest import make_repo
 
 
 @pytest.fixture
-def fake_bestand_repo(tmp_path: Path, monkeypatch) -> Path:
+def fake_bestand_repo(umbrella: Path) -> Path:
     """Biegt den Launcher-Root auf tmp; legt ausleihe-api + Bestand-Dir an."""
-    launcher = tmp_path / "sba-launcher"
-    launcher.mkdir()
-    monkeypatch.setattr(paths, "launcher_root", lambda: launcher)
-    repo = tmp_path / "ausleihe-api"
-    (repo / ".git").mkdir(parents=True)
+    repo = make_repo(umbrella, "ausleihe-api")
     (repo / "bestand- und nachbestellungen" / "New - API approach").mkdir(parents=True)
     return repo
 
