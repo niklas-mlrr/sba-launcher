@@ -12,6 +12,12 @@
   (Einrichtung/Aktualisierung/Lauf), statt reinem Button-Ausgrauen.
 - :func:`confirm_action` — einheitlich formulierter Bestätigungsdialog für
   folgenreiche Aktionen.
+- :func:`run_async` — gemeinsamer Hintergrund-Thread-Runner für
+  ``_run_async``/``_begin_busy``/``_end_busy``-artige Aktionen (Einrichtung,
+  Aktualisierung, Start …), die in ``tab_ausleihe.py``, ``tab_barcode.py`` und
+  ``tab_bestand.py`` bisher dreifach dupliziert sind. Fixt dabei den
+  Status-Clobber-Bug (Fehlerstatus wird nicht sofort vom Erfolgs-Refresh
+  überschrieben) einheitlich an einer Stelle.
 
 Diese Module importieren tkinter → **nicht** auf dem headless VPS testbar,
 nur manuell auf dem Windows-/macOS-Laptop gesmoket. Keine Logik: rein
@@ -21,8 +27,9 @@ deskriptiv, alle Zustände/Validierung liegen in ``core/``.
 from __future__ import annotations
 
 import contextlib
+import threading
 import tkinter as tk
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from tkinter import messagebox, ttk
 
 from core.process import SubprocessManager
@@ -460,3 +467,135 @@ class StatusBar(ttk.Frame):
                 style=action_style or theme.PRIMARY_BUTTON, command=action_cmd,
             )
             self._action.pack()
+
+
+def run_async(
+    widget: tk.Widget,
+    label: str,
+    fn: Callable[[Callable[[str], None]], object],
+    *,
+    log: LogView,
+    status: StatusBar,
+    busy_bar: BusyBar | None = None,
+    buttons: Iterable[ttk.Widget] = (),
+    set_busy: Callable[[bool], None] | None = None,
+    on_done: Callable[[], None] | None = None,
+    running_detail: str = "Bitte warten — das kann einen Moment dauern.",
+    error_headline: str | None = None,
+    error_detail: str = "Internetverbindung prüfen und erneut versuchen.",
+) -> None:
+    """Führt ``fn(log_fn)`` in einem Hintergrund-Thread aus; GUI bleibt reaktiv.
+
+    Gemeinsame Extraktion des ``_run_async``/``_begin_busy``/``_end_busy``-
+    Musters aus ``tab_ausleihe.py``, ``tab_barcode.py`` und ``tab_bestand.py``
+    (inkl. ``tab_bestand``s ``_run_run``-Variante mit ``dry_run`` — dafür
+    einfach ``fn=lambda log: bst.run_auto(dry_run=dry_run, ..., log=log)``
+    übergeben).
+
+    **Ablauf:**
+
+    1. Sofort (im GUI-Thread): ``buttons`` werden deaktiviert (``.state(["disabled"])``),
+       ``busy_bar.start(...)`` (falls übergeben) und ``status.set("warning", …)``
+       zeigen „läuft". ``set_busy(True)`` (falls übergeben) hält ein Caller-
+       eigenes Busy-Flag synchron.
+    2. In einem Daemon-Thread wird ``fn(log_fn)`` aufgerufen. ``fn`` ist eine
+       core-Funktion mit Signatur ``(log: Callable[[str], None]) -> None``
+       (oder beliebiger Rückgabewert, der ignoriert wird). ``log_fn`` darf
+       **nur** aus dem Worker-Thread heraus aufgerufen werden — es marshalt
+       intern selbst via ``widget.after(0, …)`` ins GUI-Thread, ``fn`` muss
+       nichts davon wissen und darf NIE direkt auf Tk-Widgets zugreifen.
+    3. Bei Erfolg (kein Exception): Erfolgszeile ins Log, Buttons werden
+       wieder aktiviert, ``busy_bar.stop()``, ``set_busy(False)`` — und
+       **danach** ``on_done()`` (falls übergeben). ``on_done`` ist der Ort für
+       caller-spezifisches Verhalten nach Erfolg, typischerweise
+       ``self._refresh_status`` (ggf. plus Formular-Neuladen o. Ä.).
+    4. Bei Exception: Fehlerzeile ins Log, ``status.set("error", …)`` zeigt
+       den Fehler, Buttons werden wieder aktiviert, ``busy_bar.stop()``,
+       ``set_busy(False)`` — **aber ``on_done()`` wird NICHT aufgerufen.**
+       Das ist der Kernfix des Status-Clobber-Bugs, der in allen drei Tabs
+       dupliziert war (siehe ``tab_ausleihe.on_start``s
+       „Fehlerstatus stehen lassen — kein Refresh überschreibt ihn."-
+       Kommentar für das gleiche Prinzip an anderer Stelle): würde
+       ``on_done`` (meist ``_refresh_status``) auch im Fehlerfall laufen,
+       würde es den gerade gesetzten Fehlerstatus sofort wieder mit dem
+       „normalen" Status überschreiben, bevor die Nutzerin ihn lesen kann.
+
+    Jeder ``widget.after(0, …)``-Callback prüft zuerst ``widget.winfo_exists()``
+    und tut sonst nichts — schließt die Nutzerin das Fenster, während der
+    Worker noch läuft, wirft der verspätete Callback keine Exception mehr.
+    Diese Prüfung setzt voraus, dass ``log``, ``status`` und ``busy_bar``
+    zusammen mit ``widget`` zerstört werden (z. B. als dessen Kinder) — bei
+    unabhängigem Lebenszyklus müsste zusätzlich deren Existenz geprüft werden.
+
+    Reentrancy (verhindern, dass ein zweiter Klick während eines laufenden
+    Vorgangs einen zweiten Worker startet) ist **nicht** Teil dieser Funktion
+    — das bleibt Sache des Callers (bestehendes ``if self._busy: return`` vor
+    dem Aufruf beibehalten).
+
+    Beispiel-Adoption (ersetzt ``tab_ausleihe.py``s ``_run_async`` +
+    ``_begin_busy``/``_end_busy``-Duo)::
+
+        def on_install(self) -> None:
+            if self._busy:
+                return
+            run_async(
+                self, "Einrichtung", aa.install,
+                log=self._log, status=self._status, busy_bar=self._busy_bar,
+                buttons=(self._btn_install, self._btn_update,
+                         self._btn_primary, self._btn_open),
+                set_busy=lambda b: setattr(self, "_busy", b),
+                on_done=self._refresh_status,
+            )
+    """
+    buttons = list(buttons)
+
+    def _safe(callback: Callable[[], None]) -> None:
+        if not widget.winfo_exists():
+            return
+        callback()
+
+    def _end_common() -> None:
+        # Läuft in Erfolgs- UND Fehlerfall — rührt NIE den Status an, damit
+        # ein im Fehlerfall gesetzter Fehlerstatus stehen bleibt.
+        if set_busy is not None:
+            set_busy(False)
+        for b in buttons:
+            with contextlib.suppress(tk.TclError):
+                b.state(["!disabled"])
+        if busy_bar is not None:
+            busy_bar.stop()
+
+    def _log_line(line: str) -> None:
+        widget.after(0, lambda: _safe(lambda: log.append(line)))
+
+    def worker() -> None:
+        try:
+            fn(_log_line)
+        except Exception as e:  # noqa: BLE001 — GUI fängt alles und loggt, keine Modals
+
+            def _on_error(exc: Exception = e) -> None:
+                log.append(f"{label} nicht abgeschlossen: {exc}", kind="error")
+                status.set("error", error_headline or f"{label} fehlgeschlagen", error_detail)
+                _end_common()
+                # on_done() bewusst NICHT aufrufen — siehe Docstring.
+
+            widget.after(0, lambda: _safe(_on_error))
+        else:
+
+            def _on_success() -> None:
+                log.append(f"{label} abgeschlossen.", kind="success")
+                _end_common()
+                if on_done is not None:
+                    on_done()
+
+            widget.after(0, lambda: _safe(_on_success))
+
+    if set_busy is not None:
+        set_busy(True)
+    for b in buttons:
+        b.state(["disabled"])
+    if busy_bar is not None:
+        busy_bar.start(f"{label} läuft …")
+    status.set("warning", f"{label} läuft", running_detail)
+
+    threading.Thread(target=worker, daemon=True).start()

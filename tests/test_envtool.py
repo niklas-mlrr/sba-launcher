@@ -56,32 +56,6 @@ def test_parse_letzte_wert_gewinnt():
     assert envtool.parse_env_text(text) == {"X": "2"}
 
 
-def test_mask_value_vollstaendig():
-    result = envtool.mask_value("geheim")
-    assert result == "•" * 8
-    assert "g" not in result
-
-
-def test_mask_value_leer_bleibt_leer():
-    assert envtool.mask_value("") == ""
-
-
-def test_masked_verdeckt_sensible_schluessel():
-    out = envtool.masked({"ISERV_DOMAIN": "schule.de", "ISERV_PASSWORD": "s3cr3t"})
-    assert out["ISERV_DOMAIN"] == "schule.de"
-    assert out["ISERV_PASSWORD"] != "s3cr3t"
-    assert "•" in out["ISERV_PASSWORD"]
-    # Symmetrisch: auch HOST_PASSWORD wird maskiert.
-    out2 = envtool.masked({"HOST_PASSWORD": "hostpw"})
-    assert out2["HOST_PASSWORD"] != "hostpw"
-    assert "•" in out2["HOST_PASSWORD"]
-
-
-def test_masked_laesst_unsensible_durch():
-    out = envtool.masked({"ISERV_USERNAME": "lukas", "HOST_PASSWORD": "pw"})
-    assert out["ISERV_USERNAME"] == "lukas"
-
-
 # --- write_env / read_env ------------------------------------------------
 
 def test_write_env_erzeugt_neue_datei(tmp_path: Path):

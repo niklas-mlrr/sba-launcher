@@ -25,6 +25,7 @@ import json
 import logging
 import re
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -35,6 +36,23 @@ from core import paths
 from core.config_io import _atomic_write_text
 
 _log = logging.getLogger(__name__)
+
+# LogFn-Callback-Muster (wie core/barcode.py, core/bestand.py, core/ausleihe_ausgabe.py):
+# jedes core-Modul hält seinen eigenen Alias statt einen gemeinsamen zu importieren.
+LogFn = Callable[[str], None]
+
+
+def _warn(log: LogFn | None, msg: str) -> None:
+    """Warnung an ``log`` (GUI-Konsole) wenn übergeben, sonst an das Modul-Logging.
+
+    ``logging`` wird von der GUI nie konfiguriert, daher landen Warnungen ohne
+    injizierten ``log``-Callback unsichtbar auf stderr. Der Fallback bleibt aber
+    bestehen, damit Aufrufe ohne ``log`` (z. B. bestehende Tests) nicht brechen.
+    """
+    if log is not None:
+        log(msg)
+    else:
+        _log.warning(msg)
 
 # ── Layout-Primitiven (gespiegelt aus update_bestand_auto.py) ────────────────
 # O5 (2026-08-12): Die reinen Helper werden kopiert statt ``update_bestand_auto``
@@ -123,20 +141,6 @@ def strip_hint(text: str) -> tuple[str, str | None]:
     return text.strip(), None
 
 
-def format_isbn(isbn: str) -> str:
-    """ISBN maskieren (z. B. '9783062052224' → '978-3-06-205222-4').
-
-    isbnlib-Spiegel aus update_bestand_auto.py mit Fallback auf den Rohwert.
-    """
-    try:
-        import isbnlib as _isbnlib
-
-        masked = _isbnlib.mask(isbn)
-        return masked if masked else isbn
-    except Exception:
-        return isbn
-
-
 # ── Datenmodell ──────────────────────────────────────────────────────────────
 
 
@@ -161,6 +165,19 @@ class Eintrag:
     id: str = ""
 
     def __post_init__(self) -> None:
+        if self.jahrgang_von > self.jahrgang_bis:
+            # Vertauschtes von/bis (z. B. Tippfehler in der GUI) soll den Eintrag
+            # nicht sofort zum Absturz bringen — statt eine Exception zu werfen,
+            # wird die Spanne repariert (getauscht) und eine Warnung geloggt.
+            # Kein ``log``-Callback verfügbar (Dataclass-Konstruktion) → Fallback
+            # auf das Modul-Logging via ``_warn``.
+            _warn(
+                None,
+                f"Eintrag {self.fach!r} [{self.isbn}]: jahrgang_von "
+                f"({self.jahrgang_von}) > jahrgang_bis ({self.jahrgang_bis}) "
+                "— Werte vertauscht.",
+            )
+            self.jahrgang_von, self.jahrgang_bis = self.jahrgang_bis, self.jahrgang_von
         if not self.id:
             self.id = _make_id(
                 self.fach, self.hint, self.jahrgang_von, self.jahrgang_bis, self.isbn
@@ -231,13 +248,16 @@ def katalog_path() -> Path:
     return paths.data_dir() / "katalog.json"
 
 
-def load_katalog(path: Path | None = None) -> Katalog:
+def load_katalog(path: Path | None = None, *, log: LogFn | None = None) -> Katalog:
     """Lädt den Katalog; leerer Katalog bei fehlender Datei.
 
     Bei kaputtem JSON (z. B. halbfertiger Schreibvorgang) wird ebenfalls ein
     leerer Katalog zurückgegeben + Warning geloggt — so bleibt die GUI bedienbar,
     statt beim Start abzustürzen. Strukturfehler (falsche Felder) hingegen werden
     weitergereicht (KeyError), da sie auf einen echten Datenfehler hindeuten.
+
+    ``log`` (optional): Callback für die GUI-Logkonsole; ohne ihn fällt die
+    Warnung auf ``logging`` zurück (s. :func:`_warn`).
     """
     if path is None:
         path = katalog_path()
@@ -246,9 +266,7 @@ def load_katalog(path: Path | None = None) -> Katalog:
     try:
         return Katalog.from_json(json.loads(path.read_text(encoding="utf-8")))
     except json.JSONDecodeError as e:
-        _log.warning(
-            "load_katalog: %s ist kein gültiges JSON (%s) — leerer Katalog.", path, e.msg
-        )
+        _warn(log, f"load_katalog: {path} ist kein gültiges JSON ({e.msg}) — leerer Katalog.")
         return Katalog(schule="", schuljahr="")
 
 
@@ -334,6 +352,7 @@ def import_from_excel(
     sheet_name: str | None = None,
     schule: str = "",
     schuljahr: str = "",
+    log: LogFn | None = None,
 ) -> Katalog:
     """Reverse-Import: Excel-Layout + config.json:mappings → Katalog.
 
@@ -341,6 +360,9 @@ def import_from_excel(
     wird die Zelle in (Fach, Jahrgang von/bis, MJB) aufgelöst. Titel/Verlag/Neupreis
     werden — sofern vorhanden — aus dem Sheet 'zu Bestellen' per ISBN angereichert.
     Dedup nach (fach, hint, von, bis, isbn).
+
+    ``log`` (optional): Callback für die GUI-Logkonsole für übersprungene
+    Mapping-Einträge (s. :func:`_warn`).
     """
     wb = load_workbook(str(excel_path), data_only=False)
     sheet = sheet_name or wb.sheetnames[0]
@@ -359,7 +381,16 @@ def import_from_excel(
         cell = m.get("bestand_cell") or m.get("angemeldet_cell")
         if not cell:
             continue
-        row, col = coordinate_to_tuple(str(cell))
+        try:
+            row, col = coordinate_to_tuple(str(cell))
+        except (ValueError, IndexError, UnboundLocalError) as exc:
+            # Eine kaputte Zellreferenz in einem einzelnen Mapping-Eintrag soll
+            # nicht den ganzen Import abbrechen — nur dieses Mapping überspringen.
+            _warn(
+                log,
+                f"import_from_excel: ungültige Zellreferenz {cell!r} ({exc}) — übersprungen.",
+            )
+            continue
         ar, ac = resolve_anchor(ws, row, col)
         span = _grades_for_cell(ws, ar, ac)
         if span is None:
@@ -395,7 +426,7 @@ def import_from_excel(
 # ── match_overrides-Sync ─────────────────────────────────────────────────────
 
 
-def catalog_to_overrides(katalog: Katalog) -> dict[str, str]:
+def catalog_to_overrides(katalog: Katalog, *, log: LogFn | None = None) -> dict[str, str]:
     """Leitet ``match_overrides`` aus dem Katalog ab (deterministisch, sortiert).
 
     Key-Format wie update_bestand_auto.py: ``f"{grade}|{fach}|{hint or ''}"``.
@@ -405,18 +436,18 @@ def catalog_to_overrides(katalog: Katalog) -> dict[str, str]:
     Bei überlappenden Einträgen (gleicher Key, unterschiedliche ISBN) gewinnt der
     letzte Eintrag — die Kollision wird aber geloggt, statt stillschweigend zu
     überschreiben (früher ein lautloser Datenverlust).
+
+    ``log`` (optional): Callback für die GUI-Logkonsole (s. :func:`_warn`).
     """
     out: dict[str, str] = {}
     for e in katalog.eintraege:
         for grade in range(e.jahrgang_von, e.jahrgang_bis + 1):
             key = f"{grade}|{e.fach}|{e.hint or ''}"
             if key in out and out[key] != e.isbn:
-                _log.warning(
-                    "catalog_to_overrides: Key-Kollision für %r —"
-                    " ISBN %s überschreibt %s (letzter gewinnt).",
-                    key,
-                    e.isbn,
-                    out[key],
+                _warn(
+                    log,
+                    f"catalog_to_overrides: Key-Kollision für {key!r} — "
+                    f"ISBN {e.isbn} überschreibt {out[key]} (letzter gewinnt).",
                 )
             out[key] = e.isbn
     return dict(sorted(out.items()))
@@ -467,6 +498,13 @@ def _mappings_for_layout(
             unmatched.append(_unmatched(e, "kein Layout-Slot"))
             continue
         rows = [grade_to_row.get(g) for g in range(e.jahrgang_von, e.jahrgang_bis + 1)]
+        if not rows:
+            # jahrgang_von > jahrgang_bis ⇒ range() ist leer ⇒ any([]) wäre False,
+            # der min()-Aufruf unten würde also auf einer leeren Sequenz crashen.
+            # Eintrag.__post_init__ tauscht von/bis normalerweise schon — dieser
+            # Guard bleibt trotzdem als defensive Absicherung bestehen.
+            unmatched.append(_unmatched(e, "Jahrgang-Bereich leer/invertiert"))
+            continue
         if any(r is None for r in rows):
             unmatched.append(_unmatched(e, "Jahrgang nicht im Layout"))
             continue
@@ -529,40 +567,3 @@ def render_excel(
         json.dumps(config, indent=2, ensure_ascii=False) + "\n",
     )
     return config_path, unmatched
-
-
-# ── Seed ─────────────────────────────────────────────────────────────────────
-
-
-def seed_default(
-    excel_path: Path | str,
-    config_path: Path | str,
-    *,
-    out_katalog: Path | None = None,
-    out_template: Path | None = None,
-    schule: str = "TRG Osterode",
-    schuljahr: str = "2026/2027",
-) -> Katalog:
-    """Erzeugt den Saat-Katalog + die Vorlage aus einer Bestand-Excel + config.json.
-
-    Liest ``config.json:mappings`` (und ``sheet_name``), importiert damit die
-    Excel in einen Katalog, schreibt ``out_katalog`` (default ``data/katalog.json``)
-    und kopiert die Excel nach ``out_template`` (default
-    ``templates/Bestand-Vorlage.xlsx``). Liefert den Katalog.
-    """
-    if out_katalog is None:
-        out_katalog = katalog_path()
-    if out_template is None:
-        out_template = paths.templates_dir() / "Bestand-Vorlage.xlsx"
-
-    config = json.loads(Path(config_path).read_text(encoding="utf-8"))
-    mappings = config.get("mappings", [])
-    sheet = config.get("sheet_name")
-
-    katalog = import_from_excel(
-        excel_path, mappings, sheet_name=sheet, schule=schule, schuljahr=schuljahr
-    )
-    save_katalog(katalog, out_katalog)
-    out_template.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(excel_path, out_template)
-    return katalog

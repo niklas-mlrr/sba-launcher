@@ -131,8 +131,13 @@ class SubprocessManager:
         """
         proc = self._process
         if proc is None or proc.poll() is not None:
-            # Schon beendet — nichts zu tun.
-            return self._return_code
+            # Schon beendet — nichts zu tun. ``_return_code`` ist evtl. noch
+            # ``None``, wenn der Pump-Thread ihn noch nicht gesetzt hat (Race
+            # zwischen Prozess-Exit und Thread-Update) — dann direkt aus dem
+            # Prozess lesen, statt fälschlich ``None`` zu liefern.
+            if proc is None:
+                return self._return_code
+            return proc.returncode if proc.returncode is not None else self._return_code
 
         if os.name == "nt":
             # Windows: taskkill /T beendet den ganzen Baum (uv → python).
@@ -266,21 +271,21 @@ def _kill_process_tree(proc: subprocess.Popen[str]) -> None:
 
 
 def run_streaming(
-    cmd: list[str] | str,
+    cmd: list[str],
     log: Callable[[str], None],
     cwd: Path | None = None,
     env: dict[str, str] | None = None,
     timeout: float = 600.0,
-    shell: bool = False,
 ) -> int:
     """Führt ein Ein-Schuss-Kommando aus; streamt stdout+stderr nach ``log``.
 
     Liefert den Exit-Code. Kein ``raise`` — der Aufrufer prüft auf ``!= 0``
     und erzeugt eine klare Fehlermeldung (mit Kommando + Exit-Code).
 
-    ``shell=True`` (mit ``cmd`` als String) wird für Windows-``.cmd``-Aufrufe
-    gebraucht (z. B. ``npm.cmd``); auf POSIX läuft ``npm`` als normales Skript
-    und braucht kein Shell.
+    ``cmd`` ist immer die List-Form (kein ``shell=True``) — auch für
+    Windows-``.cmd``-Aufrufe (z. B. ``npm.cmd``): CreateProcess führt ``.cmd``
+    direkt aus, wenn der volle Pfad als List-Element übergeben wird (siehe
+    ``prereqs.npm_bin()``); auf POSIX läuft ``npm`` als normales Skript.
 
     Implementierung: ein Reader-Thread pumpt stdout zeilenweise in eine
     ``queue.Queue``; der Main-Loop pollt mit ``queue.get(timeout=…)`` und
@@ -289,13 +294,12 @@ def run_streaming(
     ``for line in proc.stdout`` würde bis EOF blockieren und den
     ``wait(timeout=…)``-Aufruf unerreichbar machen.
     """
-    log(f"$ {cmd if isinstance(cmd, str) else ' '.join(cmd)}")
+    log(f"$ {' '.join(cmd)}")
     kwargs: dict = {
         "stdout": subprocess.PIPE,
         "stderr": subprocess.STDOUT,
         "text": True,
         "bufsize": 1,
-        "shell": shell,
     }
     if env is not None:
         kwargs["env"] = env
@@ -309,8 +313,7 @@ def run_streaming(
     try:
         proc = subprocess.Popen(cmd, cwd=str(cwd) if cwd else None, **kwargs)
     except FileNotFoundError:
-        name = cmd if isinstance(cmd, str) else cmd[0]
-        log(f"[Kommando nicht gefunden: {name}]")
+        log(f"[Kommando nicht gefunden: {cmd[0]}]")
         return 127
 
     assert proc.stdout is not None

@@ -274,10 +274,16 @@ def start(server_mgr: SubprocessManager, client_mgr: SubprocessManager, log: Log
 
     # 4. Client starten. --session-file als absoluter Pfad (client.py nimmt Path).
     log("[barcode-simple] starte Client (python client/client.py) …")
-    client_mgr.start(
-        [str(venv_python), str(CLIENT_SCRIPT), "--session-file", str(sf)],
-        cwd=barcode_root(),
-    )
+    try:
+        client_mgr.start(
+            [str(venv_python), str(CLIENT_SCRIPT), "--session-file", str(sf)],
+            cwd=barcode_root(),
+        )
+    except Exception:
+        # Client-Start gescheitert (z. B. kaputtes Repo, CLIENT_SCRIPT fehlt) —
+        # Server nicht verwaist zurücklassen (hält sonst Port + TLS-Zertifikat).
+        server_mgr.stop()
+        raise
 
 
 def _wait_for_session(sf: Path, log: LogFn) -> bool:

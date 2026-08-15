@@ -7,9 +7,10 @@ schreibt **beide** ``.env``-Dateien:
 - ``ausleihe-api/.env`` — nur ISERV_* (HOST_PASSWORD ist ein Host-Konzept)
 
 Produktionsschutz (CLAUDE.md):
-- Passwörter werden **nie** geloggt. ``masked()`` ersetzt sensible Werte für
-  die Anzeige; ``write_env`` nimmt Klartextwerte nur aus dem übergebenen Dict,
-  nie aus Logs/CLI-Args.
+- Passwörter werden **nie** geloggt. Die GUI maskiert sensible Felder selbst
+  über die Widget-Konfiguration (``FormField(masked=True)`` / ``show='*'``);
+  ``write_env`` nimmt Klartextwerte nur aus dem übergebenen Dict, nie aus
+  Logs/CLI-Args.
 - Vorhandene ``.env``-Dateien werden **zeilenerhaltend** aktualisiert — Kommentare
   und optionale Schlüssel (PORT, WORKER_CONTEXTS, PRINT_BACKEND, …) bleiben
   stehen; nur die Form-Schlüssel werden gesetzt.
@@ -61,33 +62,8 @@ REPO_KEYS: dict[str, tuple[str, ...]] = {
 # Schlüssel, deren Werte in der Anzeige maskiert werden (niemals loggen).
 SENSITIVE_KEYS: frozenset[str] = frozenset({"ISERV_PASSWORD", "HOST_PASSWORD"})
 
-_MASK = "•"
-
 # ``KEY=value`` (Wert darf ``=`` enthalten). Export-Prefix optional.
 _LINE_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$")
-
-
-def mask_value(value: str, visible: int = 0) -> str:
-    """Maskiert einen Wert vollständig (``visible=0``) oder zeigt ``visible`` Zeichen.
-
-    ``visible=0`` → 8 Bullets fix (unabhängig von der Wertlänge), damit die
-    Maskierung keine Rückschlüsse auf die Passwortlänge erlaubt. Leer bleibt leer.
-    """
-    if not value:
-        return ""
-    if visible <= 0:
-        return _MASK * 8
-    if visible >= len(value):
-        return value
-    return value[:visible] + _MASK * max(2, min(len(value) - visible, 12))
-
-
-def masked(values: dict[str, str]) -> dict[str, str]:
-    """Kopie mit sensiblen Werten maskiert — für Display/Logging."""
-    return {
-        k: (mask_value(v) if k in SENSITIVE_KEYS else v)
-        for k, v in values.items()
-    }
 
 
 def parse_env_text(text: str) -> dict[str, str]:
@@ -167,6 +143,9 @@ def write_env(path: Path, updates: dict[str, str]) -> None:
         lines = path.read_text(encoding="utf-8").splitlines()
     else:
         lines = []
+    # ``None``-Werte nicht als Literal-String "None" schreiben — als leerer
+    # String behandeln (löscht den Wert, nicht die Zeile; siehe write_form).
+    updates = {k: ("" if v is None else str(v)) for k, v in updates.items()}
     new_lines = _update_lines(lines, updates)
     # Erzwinge abschließenden Zeilenumbruch (saubere Datei).
     text = "\n".join(new_lines)
@@ -213,7 +192,9 @@ def write_form(values: dict[str, str]) -> dict[str, Path]:
     """
     written: dict[str, Path] = {}
     for repo, keys in REPO_KEYS.items():
-        updates = {k: values.get(k, "") for k in keys}
+        updates = {
+            k: ("" if (v := values.get(k, "")) is None else str(v)) for k in keys
+        }
         path = paths.env_file(repo)
         write_env(path, updates)
         written[repo] = path

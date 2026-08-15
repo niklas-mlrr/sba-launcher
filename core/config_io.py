@@ -39,13 +39,21 @@ def _atomic_write_text(path: Path, text: str) -> None:
     Verhindert halbfertige Dateien bei Absturz/Interrupt: erst in eine
     Temporärdatei ``path.suffix + ".tmp"`` im **selben Verzeichnis** schreiben
     (gleiche Partition → ``os.replace`` ist atomar), dann umbenennen. Die
-    Temp-Datei erbt die Verzeichnis-Permissions; für .env wird danach separat
+    Temp-Datei wird direkt mit ``0o600`` (nur Owner) angelegt — nicht erst per
+    ``chmod`` danach —, damit sie bei einem Crash zwischen Schreiben und
+    ``os.replace`` (z. B. als liegengebliebene ``.tmp``-Datei mit Secrets)
+    nie kurzzeitig unter dem Prozess-Umask (typ. 0o644, welt-/gruppenlesbar)
+    existiert; für .env wird zusätzlich das Ziel danach separat
     ``chmod 0o600`` gesetzt (siehe :func:`envtool.write_env`).
 
     Aufrufer muss das Verzeichnis vorher anlegen (``mkdir(parents=True, …)``).
     """
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, text.encode("utf-8"))
+    finally:
+        os.close(fd)
     os.replace(tmp, path)
 
 
