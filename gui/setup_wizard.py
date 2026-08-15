@@ -11,6 +11,7 @@ Start-Tab erneut zu öffnen; nichts hier ist Pflicht für die Bedienung.
 
 from __future__ import annotations
 
+import contextlib
 import threading
 import tkinter as tk
 from collections.abc import Callable
@@ -239,7 +240,12 @@ class SetupWizard(tk.Toplevel):
         busy.start("Einrichtung läuft …")
 
         def log_line(line: str) -> None:
-            self.after(0, lambda: log.append(line))
+            # Fenster kann mitten in der Einrichtung geschlossen werden — der
+            # Worker-Thread läuft dann noch kurz weiter. ``after()`` auf ein
+            # zerstörtes Toplevel wirft ein lautes ``tk.TclError``; das
+            # unterdrücken wir hier, statt den Worker davon wissen zu lassen.
+            with contextlib.suppress(tk.TclError):
+                self.after(0, lambda: log.append(line))
 
         def worker() -> None:
             try:

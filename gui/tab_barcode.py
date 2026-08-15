@@ -43,6 +43,7 @@ from gui.widgets import (
     LogView,
     StatusBar,
     add_tooltip,
+    run_async,
 )
 
 
@@ -54,6 +55,7 @@ class BarcodeTab(ttk.Frame):
         self._server_mgr = SubprocessManager()
         self._client_mgr = SubprocessManager()
         self._busy = False
+        self._last_url: str | None = None
         self._build()
         self._refresh_status()
         # Gemeinsamer Poll für beide Subprocess-Streams (läuft selbst weiter).
@@ -154,10 +156,26 @@ class BarcodeTab(ttk.Frame):
     # --- Aktionen ----------------------------------------------------------
 
     def on_install(self) -> None:
-        self._run_async("Einrichtung", bc.install)
+        if self._busy:
+            return
+        run_async(
+            self, "Einrichtung", bc.install,
+            log=self._log, status=self._status, busy_bar=self._busy_bar,
+            buttons=(self._btn_install, self._btn_update, self._btn_primary),
+            set_busy=lambda b: setattr(self, "_busy", b),
+            on_done=self._refresh_status,
+        )
 
     def on_update(self) -> None:
-        self._run_async("Aktualisierung", bc.update)
+        if self._busy:
+            return
+        run_async(
+            self, "Aktualisierung", bc.update,
+            log=self._log, status=self._status, busy_bar=self._busy_bar,
+            buttons=(self._btn_install, self._btn_update, self._btn_primary),
+            set_busy=lambda b: setattr(self, "_busy", b),
+            on_done=self._refresh_status,
+        )
 
     def on_start(self) -> None:
         """Startet Server+Client in einem Hintergrund-Thread.
@@ -202,35 +220,44 @@ class BarcodeTab(ttk.Frame):
         if not (self._server_mgr.is_running() or self._client_mgr.is_running()):
             self._log.append("Der Barcode-Scanner läuft gerade nicht.")
             return
-        bc.stop(
-            self._server_mgr, self._client_mgr, log=lambda line: self._log.append(line)
-        )
+        if self._busy:
+            return
+        # bc.stop()/manager.stop() kann bis zu ~10s je Prozess blockieren (zwei
+        # sequenzielle 5s-proc.wait-Timeouts) — daher im Hintergrund-Thread,
+        # sonst friert das Fenster für die Dauer spürbar ein.
+        self._busy = True
+        for b in (self._btn_install, self._btn_update, self._btn_primary):
+            b.state(["disabled"])
+        self._busy_bar.start("Scanner wird beendet …")
+
+        def worker() -> None:
+            bc.stop(
+                self._server_mgr, self._client_mgr,
+                log=lambda line: self.after(0, lambda: self._log.append(line)),
+            )
+            self.after(0, self._on_stop_done)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_stop_done(self) -> None:
+        if not self.winfo_exists():
+            return
+        self._busy = False
+        for b in (self._btn_install, self._btn_update):
+            b.state(["!disabled"])
+        self._busy_bar.stop()
         self._log.append("Barcode-Scanner beendet.", kind="success")
         self._qr.clear()
+        self._last_url = None
         self._refresh_status()
 
     # --- Async-Hilfen ------------------------------------------------------
-
-    def _run_async(self, label: str, fn) -> None:
-        """``fn(log)`` im Hintergrund-Thread (Install/Update)."""
-        if self._busy:
-            return
-
-        def log(line: str) -> None:
-            self.after(0, lambda: self._log.append(line))
-
-        def worker() -> None:
-            try:
-                fn(log)
-                self.after(0, lambda: self._log.append(f"{label} abgeschlossen.", kind="success"))
-            except Exception as e:  # noqa: BLE001
-                msg = f"{label} nicht abgeschlossen: {e}"
-                self.after(0, lambda: self._log.append(msg, kind="error"))
-            finally:
-                self.after(0, self._end_busy)
-
-        self._begin_busy(label)
-        threading.Thread(target=worker, daemon=True).start()
+    #
+    # ``_begin_busy``/``_end_busy`` werden noch von ``on_start`` gebraucht
+    # (eigener Worker, kein einfacher ``fn(log)``-Aufruf — startet Server
+    # *und* Client nacheinander mit eigenem Erfolgstext). Install/Update/Stop
+    # laufen inzwischen über ``gui.widgets.run_async`` bzw. einen eigenen
+    # Stop-Worker (siehe ``on_install``/``on_update``/``on_stop`` oben).
 
     def _begin_busy(self, label: str) -> None:
         self._busy = True
@@ -262,7 +289,10 @@ class BarcodeTab(ttk.Frame):
         for ln in self._server_mgr.poll_lines():
             self._log.append(ln)
             url = bc.parse_scanner_url(ln)
-            if url is not None:
+            if url is not None and url != self._last_url:
+                # Nur bei tatsächlicher Änderung neu aufbauen — die
+                # ``Scanner URL:``-Zeile kommt sonst pro Poll gleich mehrfach.
+                self._last_url = url
                 self._qr.set_url(url)
         for ln in self._client_mgr.poll_lines():
             self._log.append(f"Scanner: {ln}")

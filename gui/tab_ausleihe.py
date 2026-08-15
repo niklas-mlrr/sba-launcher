@@ -48,6 +48,7 @@ from gui.widgets import (
     LogView,
     StatusBar,
     add_tooltip,
+    run_async,
 )
 
 # Form-Felder: (key, label, masked). Einzige Quelle: core.envtool.FORM_FIELDS
@@ -221,10 +222,32 @@ class AusleiheTab(ttk.Frame):
     # --- Aktionen ----------------------------------------------------------
 
     def on_install(self) -> None:
-        self._run_async("Einrichtung", aa.install)
+        if self._busy:
+            return
+        run_async(
+            self, "Einrichtung", aa.install,
+            log=self._log, status=self._status, busy_bar=self._busy_bar,
+            buttons=(self._btn_install, self._btn_update, self._btn_primary, self._btn_open),
+            set_busy=lambda b: setattr(self, "_busy", b),
+            on_done=self._after_manage_done,
+        )
 
     def on_update(self) -> None:
-        self._run_async("Aktualisierung", aa.update)
+        if self._busy:
+            return
+        run_async(
+            self, "Aktualisierung", aa.update,
+            log=self._log, status=self._status, busy_bar=self._busy_bar,
+            buttons=(self._btn_install, self._btn_update, self._btn_primary, self._btn_open),
+            set_busy=lambda b: setattr(self, "_busy", b),
+            on_done=self._after_manage_done,
+        )
+
+    def _after_manage_done(self) -> None:
+        """Nach Einrichtung/Aktualisierung: Repos können neu da sein → Form
+        neu laden, danach Status neu setzen (wie zuvor in ``_end_busy``)."""
+        self._load_form_into_fields()
+        self._refresh_status()
 
     def on_start(self) -> None:
         try:
@@ -247,7 +270,29 @@ class AusleiheTab(ttk.Frame):
         if not self._manager.is_running():
             self._log.append("Die Ausleihe läuft gerade nicht.")
             return
-        aa.stop_server(self._manager)
+        if self._busy:
+            return
+        # aa.stop_server()/manager.stop() kann bis zu ~10s blockieren (zwei
+        # sequenzielle 5s-proc.wait-Timeouts) — daher im Hintergrund-Thread,
+        # sonst friert das Fenster für die Dauer spürbar ein.
+        self._busy = True
+        for b in (self._btn_install, self._btn_update, self._btn_primary, self._btn_open):
+            b.state(["disabled"])
+        self._busy_bar.start("Ausleihe wird beendet …")
+
+        def worker() -> None:
+            aa.stop_server(self._manager)
+            self.after(0, self._on_stop_done)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_stop_done(self) -> None:
+        if not self.winfo_exists():
+            return
+        self._busy = False
+        for b in (self._btn_install, self._btn_update):
+            b.state(["!disabled"])
+        self._busy_bar.stop()
         self._log.append("Ausleihe beendet.", kind="success")
         self._refresh_status()
 
@@ -257,63 +302,6 @@ class AusleiheTab(ttk.Frame):
             self._log.append(f"Arbeitsfenster geöffnet: {url}", kind="success")
         except Exception as e:  # noqa: BLE001
             self._log.append(f"Arbeitsfenster konnte nicht geöffnet werden: {e}", kind="error")
-
-    # --- Async-Hilfen ------------------------------------------------------
-
-    def _run_async(self, label: str, fn) -> None:
-        """Führt ``fn(log)`` in einem Hintergrund-Thread; loggt ins LogView.
-
-        ``fn`` ist eine core-Funktion mit Signatur ``(log: LogFn) -> None``.
-        Während des Laufs sind die Aktions-Buttons deaktiviert. Exceptions
-        werden ins Log geschrieben (nicht als Modal).
-        """
-        if self._busy:
-            return
-
-        def log(line: str) -> None:
-            # Thread-safe: via after ins GUI-Thread schicken.
-            self.after(0, lambda: self._log.append(line))
-
-        def worker() -> None:
-            try:
-                fn(log)
-                self.after(0, lambda: self._log.append(f"{label} abgeschlossen.", kind="success"))
-            except Exception as e:  # noqa: BLE001
-                msg = f"{label} nicht abgeschlossen: {e}"
-                self.after(0, lambda: self._log.append(msg, kind="error"))
-                self.after(
-                    0,
-                    lambda: self._status.set(
-                        "error",
-                        f"{label} fehlgeschlagen",
-                        "Internetverbindung prüfen und erneut versuchen.",
-                    ),
-                )
-            finally:
-                self.after(0, self._end_busy)
-
-        self._begin_busy(label)
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _begin_busy(self, label: str) -> None:
-        self._busy = True
-        for b in (self._btn_install, self._btn_update, self._btn_primary, self._btn_open):
-            b.state(["disabled"])
-        self._busy_bar.start(f"{label} läuft …")
-        self._status.set(
-            "warning", f"{label} läuft", "Bitte warten — das kann einen Moment dauern."
-        )
-
-    def _end_busy(self) -> None:
-        self._busy = False
-        # Einrichtung/Aktualisieren sind immer verfügbar; primary/open setzt
-        # _refresh_status passend zum aktuellen Zustand.
-        for b in (self._btn_install, self._btn_update):
-            b.state(["!disabled"])
-        self._busy_bar.stop()
-        # Nach install/update können die Repos neu da sein → Form neu laden.
-        self._load_form_into_fields()
-        self._refresh_status()
 
     # --- Status ------------------------------------------------------------
 

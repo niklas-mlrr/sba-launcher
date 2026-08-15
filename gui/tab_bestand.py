@@ -48,6 +48,7 @@ from gui.widgets import (
     StatusBar,
     add_tooltip,
     confirm_action,
+    run_async,
 )
 
 # Fenster-Titel für filedialog (Windows-orientiert, spielt auf POSIX keine Rolle).
@@ -77,7 +78,10 @@ class BestandTab(ttk.Frame):
         self._excel_path: Path | None = None
         self._katalog: catalog.Katalog = catalog.Katalog(schule="", schuljahr="")
         self._catalog_btns: list[ttk.Button] = []
-        self._iid_map: dict[str, str] = {}
+        # iid (Treeview-Zeile) -> Index in self._katalog.eintraege. Index statt
+        # e.id, weil e.id NICHT eindeutig ist (mehrere Einträge können dieselbe
+        # Identität/ID teilen) — vgl. on_katalog_edit/on_katalog_remove.
+        self._iid_map: dict[str, int] = {}
         self._build()
         self._load_config_into_form()
         self._load_katalog()
@@ -421,7 +425,7 @@ class BestandTab(ttk.Frame):
     def _load_katalog(self) -> None:
         """Lädt ``data/katalog.json`` (leer bei Fehlen) und befüllt den Treeview."""
         try:
-            self._katalog = catalog.load_katalog()
+            self._katalog = catalog.load_katalog(log=self._log.append)
         except Exception as e:  # noqa: BLE001 — kaputte JSON soll GUI nicht crashen
             self._log.append(f"Buchkatalog konnte nicht gelesen werden: {e}")
             self._katalog = catalog.Katalog(schule="", schuljahr="")
@@ -430,20 +434,19 @@ class BestandTab(ttk.Frame):
     def _populate_tree(self) -> None:
         """Zeigt ``self._katalog`` im Treeview (sortiert wie der Katalog).
 
-        Iids werden dedupliziert: bei gleichen ``e.id`` (mehrere Einträge mit
-        gleicher Identität) wird ein Suffix ``#2``, ``#3`` … angehängt, damit
-        ``Treeview.insert`` kein ``TclError`` wirft. ``self._iid_map`` bildet
-        die Treeview-Iid auf die echte ``eintrag.id`` ab.
+        ``self._iid_map`` bildet die Treeview-Iid auf den **Index** in
+        ``self._katalog.eintraege`` ab — NICHT auf ``e.id``, da diese ID nicht
+        eindeutig ist (mehrere Einträge können dieselbe Identität teilen).
+        Der Index ist innerhalb einer Tree-Population immer eindeutig, daher
+        auch keine Kollisionsbehandlung nötig. Wird bei jedem Neuaufbau (nach
+        Edit/Remove/Import/…) komplett neu vergeben, da sich Indizes dabei
+        verschieben können.
         """
         self._tree.delete(*self._tree.get_children())
         self._iid_map.clear()
-        seen: dict[str, int] = {}
-        for e in self._katalog.eintraege:
-            base = e.id
-            count = seen.get(base, 0)
-            seen[base] = count + 1
-            iid = base if count == 0 else f"{base}#{count + 1}"
-            self._iid_map[iid] = base
+        for idx, e in enumerate(self._katalog.eintraege):
+            iid = f"row{idx}"
+            self._iid_map[iid] = idx
             self._tree.insert(
                 "",
                 "end",
@@ -456,7 +459,7 @@ class BestandTab(ttk.Frame):
                     e.isbn,
                     e.titel,
                     e.verlag,
-                    f"{e.neupreis:.2f}" if e.neupreis else "",
+                    f"{e.neupreis:.2f}" if e.neupreis is not None else "",
                     "✓" if e.mehrjahresband else "",
                 ),
             )
@@ -499,6 +502,7 @@ class BestandTab(ttk.Frame):
                 kat = catalog.import_from_excel(
                     Path(path), mappings, sheet_name=cfg.sheet_name,
                     schule=self._katalog.schule, schuljahr=self._katalog.schuljahr,
+                    log=log,
                 )
                 self.after(0, lambda: self._finish_import(kat))
                 log(f"Buchdaten übernommen: {len(kat.eintraege)} Einträge.")
@@ -553,17 +557,33 @@ class BestandTab(ttk.Frame):
         self._begin_catalog_busy()
         threading.Thread(target=worker, daemon=True).start()
 
+    def _disable_catalog_widgets(self) -> None:
+        """Sperrt Katalog-Buttons + Treeview (geteilt von Katalog- UND Jahres-Busy).
+
+        Der Treeview selbst wird mitgesperrt (nicht nur die Buttons), damit ein
+        Doppelklick auf eine Zeile während eines laufenden Imports/Renders/
+        Jahreslaufs nicht ``on_katalog_edit`` mitten in einem Katalog-Wechsel
+        auslösen kann (race, s. ``on_katalog_add``/``_edit``/``_remove``).
+        """
+        for b in self._catalog_btns:
+            b.state(["disabled"])
+        self._tree.state(["disabled"])
+
+    def _enable_catalog_widgets(self) -> None:
+        """Gibt Katalog-Buttons + Treeview wieder frei."""
+        for b in self._catalog_btns:
+            b.state(["!disabled"])
+        self._tree.state(["!disabled"])
+
     def _begin_catalog_busy(self) -> None:
         """Sperrt die Katalog-Buttons während eines Hintergrund-Imports/-Renders."""
         self._busy = True
-        for b in self._catalog_btns:
-            b.state(["disabled"])
+        self._disable_catalog_widgets()
 
     def _end_catalog_busy(self) -> None:
         """Gibt die Katalog-Buttons nach einem Hintergrund-Import/-Render frei."""
         self._busy = False
-        for b in self._catalog_btns:
-            b.state(["!disabled"])
+        self._enable_catalog_widgets()
 
     def _finish_import(self, kat: catalog.Katalog) -> None:
         """Übernimmt den importierten Katalog im GUI-Thread (thread-safe).
@@ -577,7 +597,7 @@ class BestandTab(ttk.Frame):
     def on_katalog_sync(self) -> None:
         """Schreibt ``match_overrides`` aus dem Katalog in die config.json."""
         try:
-            overrides = catalog.catalog_to_overrides(self._katalog)
+            overrides = catalog.catalog_to_overrides(self._katalog, log=self._log.append)
             safety = config_io.read_config().safety_stock
             config_io.write_editable(safety, overrides)
         except Exception as e:  # noqa: BLE001
@@ -592,6 +612,8 @@ class BestandTab(ttk.Frame):
         )
 
     def on_katalog_add(self) -> None:
+        if self._busy:
+            return
         eintrag = self._edit_dialog()
         if eintrag is None:
             return
@@ -603,18 +625,21 @@ class BestandTab(ttk.Frame):
         )
 
     def on_katalog_edit(self) -> None:
+        if self._busy:
+            return
         sel = self._tree.selection()
         if not sel:
             return
-        eid = self._iid_map.get(sel[0], sel[0])
-        eintrag = next((e for e in self._katalog.eintraege if e.id == eid), None)
-        if eintrag is None:
+        idx = self._iid_map.get(sel[0])
+        if idx is None or idx >= len(self._katalog.eintraege):
             return
+        eintrag = self._katalog.eintraege[idx]
         updated = self._edit_dialog(eintrag)
         if updated is None:
             return
-        # Eintrag ersetzen (gleiche ID, falls Identität unverändert).
-        idx = self._katalog.eintraege.index(eintrag)
+        # Per Index ersetzen (nicht per e.id — diese ist nicht eindeutig, s.
+        # ``_iid_map``-Docstring). So trifft „bearbeiten" garantiert genau die
+        # per Doppelklick/Auswahl gemeinte Zeile, auch bei doppelten IDs.
         self._katalog.eintraege[idx] = updated
         self._populate_tree()
         self._log.append(
@@ -623,23 +648,26 @@ class BestandTab(ttk.Frame):
         )
 
     def on_katalog_remove(self) -> None:
+        if self._busy:
+            return
         sel = self._tree.selection()
         if not sel:
             return
-        eid = self._iid_map.get(sel[0], sel[0])
-        eintrag = next((e for e in self._katalog.eintraege if e.id == eid), None)
-        label = (
-            f"{eintrag.fach} Jg.{eintrag.jahrgang_von}-{eintrag.jahrgang_bis}"
-            if eintrag
-            else eid
-        )
+        idx = self._iid_map.get(sel[0])
+        if idx is None or idx >= len(self._katalog.eintraege):
+            return
+        eintrag = self._katalog.eintraege[idx]
+        label = f"{eintrag.fach} Jg.{eintrag.jahrgang_von}-{eintrag.jahrgang_bis}"
         if not confirm_action(
             self,
             "Buch-Zuordnung entfernen?",
             f"{label} wird aus dem Katalog entfernt (erst dauerhaft nach Katalog speichern).",
         ):
             return
-        self._katalog.eintraege = [e for e in self._katalog.eintraege if e.id != eid]
+        # Per Index entfernen (nicht per e.id — s. ``_iid_map``-Docstring), damit
+        # nur genau die ausgewählte Zeile verschwindet, nicht alle Einträge mit
+        # derselben (nicht eindeutigen) ID.
+        del self._katalog.eintraege[idx]
         self._populate_tree()
         self._log.append(
             "Buch-Zuordnung entfernt. Danach Katalog speichern klicken.", kind="warning"
@@ -663,7 +691,7 @@ class BestandTab(ttk.Frame):
             "Buchnummer (ISBN)": e.isbn,
             "Titel": e.titel,
             "Verlag": e.verlag,
-            "Neupreis": f"{e.neupreis:.2f}" if e.neupreis else "",
+            "Neupreis": f"{e.neupreis:.2f}" if e.neupreis is not None else "",
         }
         _keys = [
             "Fach",
@@ -747,10 +775,32 @@ class BestandTab(ttk.Frame):
     # --- Aktionen ----------------------------------------------------------
 
     def on_install(self) -> None:
-        self._run_async("Einrichtung", bst.install)
+        if self._busy:
+            return
+        run_async(
+            self, "Einrichtung", bst.install,
+            log=self._log, status=self._status, busy_bar=self._busy_bar,
+            buttons=(
+                self._btn_install, self._btn_update, self._btn_dryrun, self._btn_real,
+                self._tree, *self._catalog_btns,
+            ),
+            set_busy=lambda b: setattr(self, "_busy", b),
+            on_done=self._refresh_status,
+        )
 
     def on_update(self) -> None:
-        self._run_async("Aktualisierung", bst.update)
+        if self._busy:
+            return
+        run_async(
+            self, "Aktualisierung", bst.update,
+            log=self._log, status=self._status, busy_bar=self._busy_bar,
+            buttons=(
+                self._btn_install, self._btn_update, self._btn_dryrun, self._btn_real,
+                self._tree, *self._catalog_btns,
+            ),
+            set_busy=lambda b: setattr(self, "_busy", b),
+            on_done=self._refresh_status,
+        )
 
     def on_dry_run(self) -> None:
         self._run_run(dry_run=True)
@@ -815,33 +865,21 @@ class BestandTab(ttk.Frame):
         self._begin_busy(label)
         threading.Thread(target=worker, daemon=True).start()
 
-    def _run_async(self, label: str, fn) -> None:
-        """``fn(log)`` im Hintergrund-Thread (Install/Update)."""
-        if self._busy:
-            return
-
-        def log(line: str) -> None:
-            self.after(0, lambda: self._log.append(line))
-
-        def worker() -> None:
-            try:
-                fn(log)
-                self.after(0, lambda: self._log.append(f"{label} abgeschlossen.", kind="success"))
-            except Exception as e:  # noqa: BLE001
-                msg = f"{label} nicht abgeschlossen: {e}"
-                self.after(0, lambda: self._log.append(msg, kind="error"))
-            finally:
-                self.after(0, self._end_busy)
-
-        self._begin_busy(label)
-        threading.Thread(target=worker, daemon=True).start()
-
     # --- Busy-Status -------------------------------------------------------
 
     def _begin_busy(self, label: str) -> None:
+        """Sperrt Jahresablauf-Knöpfe UND den Katalog-Editor (Buttons + Treeview).
+
+        Während eines echten Jahreslaufs (Prüfung/Excel aktualisieren) dürfen
+        Katalog-Aktionen (Import/Render/Hinzufügen/Bearbeiten/…) nicht parallel
+        laufen — sonst kann ``self._katalog``/die Excel-Datei mitten im Lauf
+        verändert werden. Sichtbar für die Nutzerin: die Katalog-Buttons
+        sperren sich mit.
+        """
         self._busy = True
         for b in (self._btn_install, self._btn_update, self._btn_dryrun, self._btn_real):
             b.state(["disabled"])
+        self._disable_catalog_widgets()
         self._busy_bar.start(f"{label} läuft …")
         self._status.set(
             "warning", f"{label} läuft", "Bitte warten — das kann einen Moment dauern."
@@ -851,6 +889,7 @@ class BestandTab(ttk.Frame):
         self._busy = False
         for b in (self._btn_install, self._btn_update, self._btn_dryrun, self._btn_real):
             b.state(["!disabled"])
+        self._enable_catalog_widgets()
         self._busy_bar.stop()
         self._refresh_status()
 
