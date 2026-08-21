@@ -78,7 +78,7 @@ def test_venv_is_stale_frisch_am_aktuellen_ort(tmp_path: Path) -> None:
 def test_venv_is_stale_nach_rename(tmp_path: Path) -> None:
     # venv am neuen Ort, aber Console-Script referenziert noch den ALTEN Pfad
     # (der nicht mehr existiert) → stale.
-    old_python = tmp_path / "IServ-Ausleihe-Ausgabe" / ".venv" / "bin" / "python3"
+    old_python = tmp_path / "ausleihe-ausgabe" / ".venv" / "bin" / "python3"
     venv = tmp_path / "ausleihe-ausgabe" / ".venv"
     _write_console_script(venv / "bin", "playwright", str(old_python))
     assert aa._venv_is_stale(venv) is True
