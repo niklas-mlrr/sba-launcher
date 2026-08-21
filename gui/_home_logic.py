@@ -48,10 +48,16 @@ def ausleihe_installed() -> bool:
 
 
 def bestand_installed() -> bool:
-    """``True`` gdw. ausleihe-api installiert ist (Bestand-Tab-Voraussetzung)."""
-    return gitops.status("ausleihe-api").installed
+    """``True`` gdw. beide Bestand-Repos installiert sind (Tab-Voraussetzung).
+
+    ``sba-bestand`` liefert die Skripte, ``ausleihe-api`` den Client und die
+    ``.env`` — der Bestand-Tab braucht beide.
+    """
+    return all(
+        gitops.status(name).installed for name in ("sba-bestand", "ausleihe-api")
+    )
 
 
 def barcode_installed() -> bool:
-    """``True`` gdw. barcode-simple installiert ist."""
-    return gitops.status("barcode-simple").installed
+    """``True`` gdw. barcode-scanner-simple installiert ist."""
+    return gitops.status("barcode-scanner-simple").installed

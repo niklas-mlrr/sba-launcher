@@ -5,7 +5,7 @@ REM  Zentrale GUI fuer die drei SBA-Werkzeuge. Bootstrap 'uv', falls fehlt,
 REM  startet dann launcher.py (Tkinter-Fenster).
 REM
 REM  Erststart? start.bat installiert uv automatisch und legt die Umgebung
-REM  an. Die Geschwister-Repos (ausleihe-ausgabe, ausleihe-api, barcode-simple)
+REM  an. Die Geschwister-Repos (ausleihe-ausgabe, ausleihe-api, barcode-scanner-simple)
 REM  werden ueber die Tabs der GUI geklont/gepflegt — nicht von hier.
 REM ====================================================================
 setlocal

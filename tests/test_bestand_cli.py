@@ -19,9 +19,14 @@ from tests.conftest import make_repo
 
 @pytest.fixture
 def fake_bestand_repo(umbrella: Path) -> Path:
-    """Biegt den Launcher-Root auf tmp; legt ausleihe-api + Bestand-Dir an."""
-    repo = make_repo(umbrella, "ausleihe-api")
-    (repo / "bestand- und nachbestellungen" / "New - API approach").mkdir(parents=True)
+    """Biegt den Launcher-Root auf tmp; legt sba-bestand + ausleihe-api an.
+
+    Beide Repos sind Vorbedingung: die Skripte liegen in ``sba-bestand``, der
+    Client ``ausleihe`` und die ``.env`` in ``ausleihe-api``.
+    """
+    make_repo(umbrella, "ausleihe-api")
+    repo = make_repo(umbrella, "sba-bestand")
+    (repo / "bestand").mkdir(parents=True)
     return repo
 
 
@@ -40,11 +45,10 @@ def _seed_skript_venv_env(fake_bestand_repo: Path) -> Path:
 
 
 def test_konstanten_konsistent() -> None:
-    assert Path("bestand- und nachbestellungen/New - API approach") == bst.BESTAND_DIR_REL
+    assert Path("bestand") == bst.BESTAND_DIR_REL
     assert bst.BESTAND_SCRIPT_REL == bst.BESTAND_DIR_REL / "update_bestand_auto.py"
     assert bst.BESTAND_CONFIG_REL == bst.BESTAND_DIR_REL / "config.json"
     assert Path(".venv-bestand") == bst.BESTAND_VENV_DIR
-    assert bst.BESTAND_EXTRA == "bestand"
 
 
 def test_venv_python_rel_windows() -> None:
@@ -56,7 +60,7 @@ def test_venv_python_rel_posix() -> None:
 
 
 def test_script_und_config_pfad(fake_bestand_repo: Path) -> None:
-    base = (fake_bestand_repo / "bestand- und nachbestellungen" / "New - API approach").resolve()
+    base = (fake_bestand_repo / "bestand").resolve()
     assert bst.script_path().resolve() == (base / "update_bestand_auto.py").resolve()
     assert bst.config_path().resolve() == (base / "config.json").resolve()
 
@@ -247,4 +251,6 @@ def test_install_reicht_kommandos_als_liste(fake_bestand_repo: Path, monkeypatch
     assert pip_calls[0]["cmd"][0] == "uv"
     assert "install" in pip_calls[0]["cmd"]
     assert "-e" in pip_calls[0]["cmd"]
-    assert f".[{bst.BESTAND_EXTRA}]" in pip_calls[0]["cmd"]
+    # Kein Extra mehr: sba-bestand listet seine Deps direkt (inkl. ausleihe-api
+    # als editable-Pfad-Quelle) — installiert wird schlicht ``-e .``.
+    assert "." in pip_calls[0]["cmd"]

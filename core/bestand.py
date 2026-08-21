@@ -1,28 +1,33 @@
 """Orchestrierung der Bestand-/Nachbestellungs-Excel (install/update/run_auto).
 
-Das Bestand-Werkzeug ist ein Ein-Schuss-Skript im ausleihe-api-Repo:
+Das Bestand-Werkzeug ist ein Ein-Schuss-Skript im sba-bestand-Repo:
 
-    ausleihe-api/bestand- und nachbestellungen/New - API approach/update_bestand_auto.py
+    sba-bestand/bestand/update_bestand_auto.py
 
 Es liest die Excel-Struktur selbst aus, zieht Bestands-/Anmeldezahlen per
 IServ-GET und trägt sie in die Excel ein (bzw. nur im ``--dry-run`` auf stdout).
-``run_auto`` shellt dieses Skript in einem **eigenen Venv** (``.[bestand]``-Extra:
-openpyxl, isbnlib, python-dotenv) und streamt stdout als Report ins LogView.
+``run_auto`` shellt dieses Skript in einem **eigenen Venv** (openpyxl, isbnlib,
+python-dotenv, reportlab) und streamt stdout als Report ins LogView.
 
-Venv-Strategie (O2, entschieden 2026-08-12): eigenes isoliertes ``.venv-bestand``
-im ausleihe-api-Root via ``uv venv`` + ``uv pip install -e ".[bestand]"`` — kein
-globales pip, getrennt vom Launcher- und ausleihe-ausgabe-Venv. Spiegelt das
-Barcode-Client-Venv-Pattern (``core/barcode.py``).
+Venv-Strategie (O2, entschieden 2026-08-12; angepasst 2026-08-21): eigenes
+isoliertes ``.venv-bestand`` im sba-bestand-Root via ``uv venv`` +
+``uv pip install -e .`` — kein globales pip, getrennt vom Launcher- und
+ausleihe-ausgabe-Venv. Spiegelt das Barcode-Client-Venv-Pattern
+(``core/barcode.py``).
 
-Unabhängigkeit (O4): ``install`` klont **nur** ``ausleihe-api`` — der Bestand-Tab
-bleibt nutzbar, auch wenn ``ausleihe-ausgabe`` (noch) nicht installiert ist.
+Unabhängigkeit (O4, revidiert 2026-08-21): ``install`` klont **zwei** Repos —
+``sba-bestand`` (die Skripte) und ``ausleihe-api`` (der Client ``ausleihe`` +
+die ``.env`` mit den Credentials). Vor der Extraktion am 2026-08-21 lagen die
+Skripte in ``ausleihe-api``, daher genügte damals ein Repo. Der Bestand-Tab
+bleibt weiterhin unabhängig von ``ausleihe-ausgabe``.
 
 Produktionsschutz (CLAUDE.md):
 - ``update_bestand_auto.py`` macht **nur GET**-Zugriffe auf die IServ-API und
   schreibt ausschließlich in die lokale Excel-Datei — nie nach IServ.
 - ``ALLOW_BOOKING`` wird nicht angetastet; API-Writes werden nicht angeboten.
-- Credentials stehen in ``ausleihe-api/.env``; das Skript liest sie via
-  ``python-dotenv`` selbst (``load_dotenv(_ROOT / ".env")``). Der Launcher
+- Credentials stehen weiterhin in ``ausleihe-api/.env``; das Skript liest sie
+  via ``python-dotenv`` selbst aus dem Geschwister-Repo
+  (``load_dotenv(_API_ROOT / ".env")``). Der Launcher
   reicht **keine** Passwörter als CLI-Args — der Subprocess erbt lediglich
   ``os.environ`` (damit ``uv``/Python funktionieren).
 
@@ -39,20 +44,21 @@ from pathlib import Path
 from core import gitops, paths
 from core.process import run_streaming
 
-# Relativer Pfad zum Bestand-Skript-Verzeichnis (vom ausleihe-api-Root aus).
-# Mit Leerzeichen/Umlauten — pathlib handhabt das; CLI-Args werden als Liste
+# Relativer Pfad zum Bestand-Skript-Verzeichnis (vom sba-bestand-Root aus).
+# Seit 2026-08-21 ASCII ohne Leerzeichen (vorher "bestand- und
+# nachbestellungen/New - API approach"); CLI-Args werden weiterhin als Liste
 # (nicht shell) gereicht, daher kein Quoting nötig.
-BESTAND_DIR_REL = Path("bestand- und nachbestellungen/New - API approach")
+BESTAND_DIR_REL = Path("bestand")
 BESTAND_SCRIPT_REL = BESTAND_DIR_REL / "update_bestand_auto.py"
 BESTAND_CONFIG_REL = BESTAND_DIR_REL / "config.json"
 
-# Eigenes Venv für das Bestand-Extra (O2). Liegt im ausleihe-api-Root;
+# Eigenes Venv für die Bestand-Abhängigkeiten (O2). Liegt im sba-bestand-Root;
 # ``.venv*`` ist dort konventionsgemäß gitignored.
 BESTAND_VENV_DIR = Path(".venv-bestand")
 
-# Extra, das die Bestand-Abhängigkeiten (openpyxl, isbnlib, python-dotenv)
-# zieht — definiert in ausleihe-api/pyproject.toml.
-BESTAND_EXTRA = "bestand"
+# sba-bestand hat keine Extras mehr — die Abhängigkeiten (openpyxl, isbnlib,
+# python-dotenv, reportlab) stehen direkt in sba-bestand/pyproject.toml, das
+# ausleihe-api als editable-Pfad-Quelle einbindet.
 
 LogFn = Callable[[str], None]
 
@@ -61,8 +67,8 @@ LogFn = Callable[[str], None]
 
 
 def bestand_root() -> Path:
-    """Wurzel des ausleihe-api-Repos (``../ausleihe-api``)."""
-    return paths.sibling("ausleihe-api")
+    """Wurzel des sba-bestand-Repos (``../sba-bestand``)."""
+    return paths.sibling("sba-bestand")
 
 
 def bestand_dir() -> Path:
@@ -81,7 +87,12 @@ def config_path() -> Path:
 
 
 def env_file() -> Path:
-    """``ausleihe-api/.env`` — dort liest das Skript die IServ-Credentials."""
+    """``ausleihe-api/.env`` — dort liest das Skript die IServ-Credentials.
+
+    Bewusst **nicht** ``sba-bestand/.env``: sba-bestand hält keine eigenen
+    Secrets, sondern liest die ``.env`` des Geschwister-Repos (siehe
+    ``sba-bestand/README.md``).
+    """
     return paths.env_file("ausleihe-api")
 
 
@@ -113,21 +124,26 @@ def bestand_venv_dir() -> Path:
 
 
 def install(log: LogFn) -> None:
-    """Klont ``ausleihe-api`` (idempotent) + legt das Bestand-Venv an.
+    """Klont ``sba-bestand`` + ``ausleihe-api`` (idempotent) + legt das Venv an.
 
-    O4: klont **nur** ausleihe-api — unabhängig von ausleihe-ausgabe. Danach
-    ``uv venv`` + ``uv pip install -e ".[bestand]"`` im ausleihe-api-Root. Hebt
-    bei kritischem Fehler (clone/venv scheitert). Hinweis, falls die ``.env``
+    O4 (revidiert 2026-08-21): klont **beide** Repos — die Skripte liegen in
+    ``sba-bestand``, der Client ``ausleihe`` und die ``.env`` in
+    ``ausleihe-api``. Weiterhin unabhängig von ausleihe-ausgabe. Danach
+    ``uv venv`` + ``uv pip install -e .`` im sba-bestand-Root. Hebt bei
+    kritischem Fehler (clone/venv scheitert). Hinweis, falls die ``.env``
     noch fehlt (das Skript braucht IServ-Credentials).
     """
-    # 1. Repo klonen (idempotent — nicht zweimal klonen).
-    if paths.exists("ausleihe-api"):
-        log("[ausleihe-api] bereits installiert — clone übersprungen")
-    else:
-        url = gitops.REPO_URLS["ausleihe-api"]
-        log(f"[ausleihe-api] klone {url} …")
-        gitops.clone("ausleihe-api", url)
-        log("[ausleihe-api] clone ok")
+    # 1. Repos klonen (idempotent — nicht zweimal klonen).
+    #    Reihenfolge: ausleihe-api zuerst, damit der editable-Pfad-Install
+    #    von sba-bestand (``../ausleihe-api``) sein Ziel bereits vorfindet.
+    for repo in ("ausleihe-api", "sba-bestand"):
+        if paths.exists(repo):
+            log(f"[{repo}] bereits installiert — clone übersprungen")
+            continue
+        url = gitops.REPO_URLS[repo]
+        log(f"[{repo}] klone {url} …")
+        gitops.clone(repo, url)
+        log(f"[{repo}] clone ok")
 
     # 2. Bestand-Venv (openpyxl, isbnlib, python-dotenv isoliert).
     _ensure_bestand_venv(log)
@@ -143,22 +159,27 @@ def install(log: LogFn) -> None:
 
 
 def update(log: LogFn) -> gitops.RepoStatus:
-    """``git pull`` in ausleihe-api + Bestand-Venv auffrischen.
+    """``git pull`` in sba-bestand + ausleihe-api, dann Venv auffrischen.
 
-    Liefert den Vorher-Status (inkl. ``dirty``), damit die GUI warnen kann,
-    falls ``pull --ff-only`` wegen lokaler Änderungen scheitert. Das Venv wird
-    neu installiert (``-e`` editable — Code-Änderungen werden sofort gezogen).
+    Liefert den Vorher-Status von ``sba-bestand`` (inkl. ``dirty``), damit die
+    GUI warnen kann, falls ``pull --ff-only`` wegen lokaler Änderungen
+    scheitert. Das Venv wird neu installiert (``-e`` editable — Code-Änderungen
+    in beiden Repos werden sofort gezogen).
     """
-    pre = gitops.status("ausleihe-api")
+    pre = gitops.status("sba-bestand")
     if not pre.installed:
-        raise FileNotFoundError("ausleihe-api nicht installiert — erst install()")
-    if pre.dirty:
-        log("[ausleihe-api] WARNUNG: lokale Änderungen — pull --ff-only könnte scheitern")
+        raise FileNotFoundError("sba-bestand nicht installiert — erst install()")
 
-    log("[ausleihe-api] git pull --ff-only …")
-    out = gitops.pull("ausleihe-api")
-    if out:
-        log(out)
+    for repo in ("ausleihe-api", "sba-bestand"):
+        st = gitops.status(repo)
+        if not st.installed:
+            raise FileNotFoundError(f"{repo} nicht installiert — erst install()")
+        if st.dirty:
+            log(f"[{repo}] WARNUNG: lokale Änderungen — pull --ff-only könnte scheitern")
+        log(f"[{repo}] git pull --ff-only …")
+        out = gitops.pull(repo)
+        if out:
+            log(out)
 
     _ensure_bestand_venv(log)
 
@@ -167,7 +188,7 @@ def update(log: LogFn) -> gitops.RepoStatus:
 
 
 def _ensure_bestand_venv(log: LogFn) -> None:
-    """Legt das Bestand-Venv an und installiert ``-e ".[bestand]"``.
+    """Legt das Bestand-Venv an und installiert ``-e .`` (sba-bestand).
 
     Idempotent: ``uv pip install`` läuft immer (bringt das editable-Paket + Extra
     auf Stand). ``uv venv`` aktualisiert ein bestehendes Venv nicht, wird daher
@@ -180,9 +201,9 @@ def _ensure_bestand_venv(log: LogFn) -> None:
         rc = run_streaming(["uv", "venv", str(venv_dir)], log=log, cwd=bestand_root())
         if rc != 0:
             raise RuntimeError(f"uv venv fehlgeschlagen (Exit {rc})")
-    log(f"[bestand] uv pip install -e .[{BESTAND_EXTRA}] …")
+    log("[bestand] uv pip install -e . …")
     rc = run_streaming(
-        ["uv", "pip", "install", "--python", str(venv_python), "-e", f".[{BESTAND_EXTRA}]"],
+        ["uv", "pip", "install", "--python", str(venv_python), "-e", "."],
         log=log,
         cwd=bestand_root(),
     )
@@ -230,14 +251,17 @@ def run_auto(
     Skript liest seine IServ-Credentials aus ``ausleihe-api/.env`` selbst — der
     Subprocess erbt ``os.environ`` (keine Passwörter im Kommando).
 
-    Vorbedingung: ausleihe-api installiert + Bestand-Venv vorhanden + Skript da.
-    Hebt mit klaren Fehlern, falls eine Vorbedingung fehlt (GUI zeigt sie).
+    Vorbedingung: sba-bestand **und** ausleihe-api installiert + Bestand-Venv
+    vorhanden + Skript da. ausleihe-api wird gebraucht, weil das Skript von dort
+    den Client ``ausleihe`` und die ``.env`` zieht. Hebt mit klaren Fehlern,
+    falls eine Vorbedingung fehlt (GUI zeigt sie).
     """
     if log is None:
         log = lambda _l: None  # noqa: E731 — Default-Noop
 
-    if not paths.exists("ausleihe-api"):
-        raise FileNotFoundError("ausleihe-api nicht installiert — erst install()")
+    for repo in ("sba-bestand", "ausleihe-api"):
+        if not paths.exists(repo):
+            raise FileNotFoundError(f"{repo} nicht installiert — erst install()")
     script = script_path()
     if not script.is_file():
         raise FileNotFoundError(

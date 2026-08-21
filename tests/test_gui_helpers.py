@@ -82,11 +82,14 @@ def test_ausleihe_installed_false_wenn_nur_eins_da(umbrella: Path) -> None:
 
 def test_bestand_installed(umbrella: Path) -> None:
     assert hl.bestand_installed() is False
+    # Ein Repo allein genügt nicht — sba-bestand braucht ausleihe-api daneben.
+    _mark_installed(umbrella, "sba-bestand")
+    assert hl.bestand_installed() is False
     _mark_installed(umbrella, "ausleihe-api")
     assert hl.bestand_installed() is True
 
 
 def test_barcode_installed(umbrella: Path) -> None:
     assert hl.barcode_installed() is False
-    _mark_installed(umbrella, "barcode-simple")
+    _mark_installed(umbrella, "barcode-scanner-simple")
     assert hl.barcode_installed() is True

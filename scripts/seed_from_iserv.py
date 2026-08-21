@@ -8,10 +8,10 @@ einen vollständigen Katalog mit Titel/Verlag/Neupreis nach ``data/katalog.json`
 Zusätzlich wird die 2026er Excel als Vorlage nach ``templates/Bestand-Vorlage.xlsx``
 kopiert.
 
-Läuft im **ausleihe-api-.venv** (hat ``ausleihe`` + openpyxl + isbnlib + dotenv), NICHT
+Läuft im **sba-bestand-.venv** (hat ``ausleihe`` + openpyxl + isbnlib + dotenv), NICHT
 im Launcher-Venv (das ``ausleihe`` nicht enthält):
 
-    ~/projects/sba/ausleihe-api/.venv/bin/python \\
+    ~/projects/sba/sba-bestand/.venv/bin/python \\
         ~/projects/sba/sba-launcher/scripts/seed_from_iserv.py
 
 Produktionsschutz: rein lesend (GET). Keine Buchungen, keine API-Writes, kein
@@ -25,19 +25,19 @@ from pathlib import Path
 
 # sba-launcher-Root (für ``core.catalog`` + ``core.paths``) + Bestand-Dir (für
 # ``update_bestand_auto``) in den Pfad nehmen. Reihenfolge: Bestand zuerst,
-# damit update_bestand_auto sein eigenes sys.path-Setup (_ROOT = parent.parent)
-# ungestört vorfindet.
+# damit update_bestand_auto sein eigenes sys.path-Setup (Fallback auf
+# ``../ausleihe-api``) ungestört vorfindet.
 LAUNCHER = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(LAUNCHER))
 
 from core import paths  # noqa: E402
 
-BESTAND = paths.sibling("ausleihe-api") / "bestand- und nachbestellungen/New - API approach"
+BESTAND = paths.sibling("sba-bestand") / "bestand"
 sys.path.insert(0, str(BESTAND))
 
-# Hinweis für Tests: dieses Skript hängt von privaten APIs des Geschwister-Repos
-# ausleihe-api ab (``update_bestand_auto``, ``ausleihe.*``) — nicht Teil dieses
-# Repos' Testabdeckung, siehe tests/test_seed_from_iserv.py.
+# Hinweis für Tests: dieses Skript hängt von privaten APIs der Geschwister-Repos
+# sba-bestand (``update_bestand_auto``) und ausleihe-api (``ausleihe.*``) ab —
+# nicht Teil dieses Repos' Testabdeckung, siehe tests/test_seed_from_iserv.py.
 import update_bestand_auto as auto  # noqa: E402
 from ausleihe import AusleiheClient  # noqa: E402
 from ausleihe.inventory_excel import match_book  # noqa: E402

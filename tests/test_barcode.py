@@ -23,8 +23,8 @@ from tests.conftest import make_repo
 
 @pytest.fixture
 def fake_barcode_repo(umbrella: Path) -> Path:
-    """Biegt ``barcode-simple`` auf ein tmp-Repo (mit .git + runtime-Dir)."""
-    repo = make_repo(umbrella, "barcode-simple")
+    """Biegt ``barcode-scanner-simple`` auf ein tmp-Repo (mit .git + runtime-Dir)."""
+    repo = make_repo(umbrella, "barcode-scanner-simple")
     (repo / "server" / "runtime").mkdir(parents=True)
     return repo
 

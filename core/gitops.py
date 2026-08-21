@@ -24,9 +24,10 @@ from core import paths
 # Kanonische Remote-URLs (GitHub HTTPS, public). Werden für clone verwendet;
 # der Launcher pusht nie (Produktionsschutz).
 REPO_URLS: dict[str, str] = {
-    "ausleihe-ausgabe": "https://github.com/niklas-mlrr/IServ-Ausleihe-Ausgabe.git",
-    "ausleihe-api": "https://github.com/niklas-mlrr/IServ-Ausleihe-API.git",
-    "barcode-simple": "https://github.com/niklas-mlrr/Barcode-Scanner.git",
+    "ausleihe-ausgabe": "https://github.com/niklas-mlrr/ausleihe-ausgabe.git",
+    "ausleihe-api": "https://github.com/niklas-mlrr/ausleihe-api.git",
+    "sba-bestand": "https://github.com/niklas-mlrr/sba-bestand.git",
+    "barcode-scanner-simple": "https://github.com/niklas-mlrr/barcode-scanner-simple.git",
 }
 
 # Timeouts: status ist lokal schnell; clone/pull gehen ins Netz.

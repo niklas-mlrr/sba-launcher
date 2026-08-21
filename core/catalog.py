@@ -58,10 +58,9 @@ def _warn(log: LogFn | None, msg: str) -> None:
 # O5 (2026-08-12): Die reinen Helper werden kopiert statt ``update_bestand_auto``
 # zu importieren, weil jenes Modul Top-Level ``from ausleihe import AusleiheClient``
 # + ``dotenv.load_dotenv()`` ausführt — ein Import aus dem Launcher-Venv (ohne das
-# Paket ``ausleihe``) scheitert bzw. lädt Credentials. Pfad-mit-Leerzeichen ist
-# NICHT das Problem (pathlib/importlib handhabt das). Die Kopien halten sich
-# byte-identisch zum Original (Quelle: ``ausleihe-api/bestand- und nachbestellungen/
-# New - API approach/update_bestand_auto.py``); Drift-Risiko akzeptiert (stabil).
+# Paket ``ausleihe``) scheitert bzw. lädt Credentials. Die Kopien halten sich
+# byte-identisch zum Original (Quelle: ``sba-bestand/bestand/
+# update_bestand_auto.py``); Drift-Risiko akzeptiert (stabil).
 
 
 def resolve_anchor(ws, row: int, col: int) -> tuple[int, int]:

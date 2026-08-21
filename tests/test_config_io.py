@@ -17,9 +17,8 @@ from core import config_io
 @pytest.fixture
 def fake_bestand_repo(umbrella: Path) -> Path:
     """Biegt den Launcher-Root auf tmp; legt das Bestand-Dir (ohne config) an."""
-    # ausleihe-api existiert als Verzeichnis (config_path() zeigt dorthin).
-    (umbrella / "ausleihe-api" / "bestand- und nachbestellungen" /
-     "New - API approach").mkdir(parents=True)
+    # sba-bestand existiert als Verzeichnis (config_path() zeigt dorthin).
+    (umbrella / "sba-bestand" / "bestand").mkdir(parents=True)
     return umbrella / "sba-launcher"
 
 

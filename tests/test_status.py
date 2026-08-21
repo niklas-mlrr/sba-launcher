@@ -66,6 +66,7 @@ def test_bestand_nicht_installiert(umbrella: Path) -> None:
 
 
 def test_bestand_installiert_ohne_venv(umbrella: Path) -> None:
+    _mark_installed(umbrella, "sba-bestand")
     _mark_installed(umbrella, "ausleihe-api")
     paths.env_file("ausleihe-api").write_text(
         "ISERV_DOMAIN=trg\nISERV_USERNAME=u\nISERV_PASSWORD=p\n", encoding="utf-8"
@@ -77,6 +78,7 @@ def test_bestand_installiert_ohne_venv(umbrella: Path) -> None:
 
 
 def test_bestand_bereit(umbrella: Path) -> None:
+    _mark_installed(umbrella, "sba-bestand")
     _mark_installed(umbrella, "ausleihe-api")
     paths.env_file("ausleihe-api").write_text(
         "ISERV_DOMAIN=trg\nISERV_USERNAME=u\nISERV_PASSWORD=p\n", encoding="utf-8"
@@ -99,7 +101,7 @@ def test_barcode_nicht_installiert(umbrella: Path) -> None:
 
 
 def test_barcode_bereit(umbrella: Path, monkeypatch) -> None:
-    _mark_installed(umbrella, "barcode-simple")
+    _mark_installed(umbrella, "barcode-scanner-simple")
     venv_py = bc.client_venv_python()
     venv_py.parent.mkdir(parents=True, exist_ok=True)
     venv_py.write_text("# fake", encoding="utf-8")

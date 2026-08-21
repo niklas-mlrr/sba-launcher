@@ -56,8 +56,14 @@ def ausleihe_status(running: bool = False) -> ToolStatus:
 
 
 def bestand_status() -> ToolStatus:
-    """Bereitschaft der Bestandsliste (Repo + ``.env`` + eigenes Venv)."""
-    installed = gitops.status("ausleihe-api").installed
+    """Bereitschaft der Bestandsliste (beide Repos + ``.env`` + eigenes Venv).
+
+    Braucht ``sba-bestand`` (Skripte) **und** ``ausleihe-api`` (Client
+    ``ausleihe`` + ``.env`` mit den Credentials).
+    """
+    installed = (
+        gitops.status("sba-bestand").installed and gitops.status("ausleihe-api").installed
+    )
     env_ready = envtool.is_ready("ausleihe-api")
     venv_ready = bst.bestand_venv_python().is_file()
     ready = installed and env_ready and venv_ready
@@ -74,7 +80,7 @@ def bestand_status() -> ToolStatus:
 
 def barcode_status(running: bool = False) -> ToolStatus:
     """Bereitschaft des Barcode-Scanners (Repo + Client-Venv + Node)."""
-    installed = gitops.status("barcode-simple").installed
+    installed = gitops.status("barcode-scanner-simple").installed
     node_ok = prereqs.check_node().available
     ready = installed and node_ok and bc.client_venv_python().is_file()
     if running:

@@ -6,11 +6,13 @@ Der Launcher liegt neben seinen Geschwistern (Ziel-Layout ``C:\SBA\``):
     ├── sba-launcher\
     ├── ausleihe-ausgabe\
     ├── ausleihe-api\
-    └── barcode-simple\
+    ├── sba-bestand\
+    └── barcode-scanner-simple\
 
 Jede Referenz läuft über ``sibling(name)`` → ``<launcher-root>/../<name>``.
-Diese Konvention entspricht dem Bestand-Projekt (``../ausleihe-api``) und ist
-der einzige Ort, an dem Geschwister-Pfade festgenagelt werden.
+``sba-bestand`` liest die Credentials aus ``../ausleihe-api/.env`` — beide
+Repos müssen also nebeneinander liegen. Dies ist der einzige Ort, an dem
+Geschwister-Pfade festgenagelt werden.
 """
 
 from __future__ import annotations
@@ -22,7 +24,8 @@ from pathlib import Path
 SIBLING_REPOS: tuple[str, ...] = (
     "ausleihe-ausgabe",
     "ausleihe-api",
-    "barcode-simple",
+    "sba-bestand",
+    "barcode-scanner-simple",
 )
 
 

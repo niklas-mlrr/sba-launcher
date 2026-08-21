@@ -1,7 +1,7 @@
 """Lesen/Schreiben der Bestand-``config.json`` (Roh-Editor-Basis).
 
-Die ``config.json`` liegt neben ``update_bestand_auto.py`` im ausleihe-api-Repo
-(``bestand- und nachbestellungen/New - API approach/config.json``) und enthält:
+Die ``config.json`` liegt neben ``update_bestand_auto.py`` im sba-bestand-Repo
+(``tools/bestand/config.json``) und enthält:
 
 - ``excel_file`` / ``sheet_name`` — Layout-Bezug (nicht vom Launcher editiert),
 - ``safety_stock`` — zusätzlicher Sicherheitsbestand je Titel (MVP-editierbar),
@@ -103,7 +103,7 @@ def _load_raw(path: Path) -> dict:
 def read_config(path: Path | None = None) -> BestandConfig:
     """Liest die config.json in ein :class:`BestandConfig`.
 
-    ``path`` defaultet auf den kanonischen Pfad im ausleihe-api-Repo. Fehlt die
+    ``path`` defaultet auf den kanonischen Pfad im sba-bestand-Repo. Fehlt die
     Datei (Repo noch nicht geklont), gelten die Defaults (safety_stock=5,
     match_overrides={}) — der Tab bleibt bedienbar, schreibt aber erst beim
     Speichern eine neue Datei.

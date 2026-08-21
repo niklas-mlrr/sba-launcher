@@ -1,6 +1,6 @@
 """Orchestrierung des eigenständigen Barcode-Scanners (install/update/start/stop).
 
-Der Barcode-Scanner ist ein Zwei-Prozess-Stack (``barcode-simple``):
+Der Barcode-Scanner ist ein Zwei-Prozess-Stack (``barcode-scanner-simple``):
 
 - **Server** (Node.js): ``node server/server.js`` — HTTPS + WebSocket-Bridge.
   Schreibt beim Start ``server/runtime/session.json`` (Port, certPath,
@@ -36,9 +36,9 @@ from pathlib import Path
 from core import gitops, paths, prereqs
 from core.process import SubprocessManager, run_streaming
 
-# Kanonische Werte (geeint mit barcode-simple/start.bat + server.js).
+# Kanonische Werte (geeint mit barcode-scanner-simple/start.bat + server.js).
 SERVER_PORT_DEFAULT = 3443
-# Relative Pfade innerhalb des barcode-simple-Repos (vom Repo-Root aus).
+# Relative Pfade innerhalb des barcode-scanner-simple-Repos (vom Repo-Root aus).
 SERVER_SCRIPT = Path("server/server.js")
 CLIENT_SCRIPT = Path("client/client.py")
 CLIENT_REQUIREMENTS = Path("client/requirements.txt")
@@ -49,7 +49,7 @@ SESSION_TIMEOUT_S = 30.0
 SESSION_POLL_INTERVAL_S = 0.25
 # Venv für den Python-Client (eigene Umgebung, damit pyautogui/pynput/websocket
 # isoliert vom Launcher installiert werden). Liegt im Repo-Root; .venv* ist in
-# barcode-simple/.gitignore konventionsgemäß ignoriert.
+# barcode-scanner-simple/.gitignore konventionsgemäß ignoriert.
 CLIENT_VENV_DIR = Path(".venv-client")
 
 LogFn = Callable[[str], None]
@@ -63,8 +63,8 @@ _SCANNER_URL_RE = re.compile(r"Scanner URL:\s*(https?://\S+)")
 
 
 def barcode_root() -> Path:
-    """Wurzel des barcode-simple-Repos (``../barcode-simple``)."""
-    return paths.sibling("barcode-simple")
+    """Wurzel des barcode-scanner-simple-Repos (``../barcode-scanner-simple``)."""
+    return paths.sibling("barcode-scanner-simple")
 
 
 def session_file() -> Path:
@@ -73,7 +73,7 @@ def session_file() -> Path:
 
 
 def server_dir() -> Path:
-    """``barcode-simple/server`` ( cwd für ``npm install``)."""
+    """``barcode-scanner-simple/server`` ( cwd für ``npm install``)."""
     return barcode_root() / "server"
 
 
@@ -132,27 +132,27 @@ def parse_scanner_url(line: str) -> str | None:
 
 
 def install(log: LogFn) -> None:
-    """Klont barcode-simple, ``npm install`` (server), Client-Venv + Node.
+    """Klont barcode-scanner-simple, ``npm install`` (server), Client-Venv + Node.
 
     Schritte: clone (idempotent) → portables Node sicherstellen →
     ``npm install`` im server/ → ``uv venv`` + ``uv pip install`` für den
     Client. Hebt bei kritischem Fehler (clone/npm/venv scheitert).
     """
     # 1. Repo klonen (idempotent — nicht zweimal klonen).
-    if paths.exists("barcode-simple"):
-        log("[barcode-simple] bereits installiert — clone übersprungen")
+    if paths.exists("barcode-scanner-simple"):
+        log("[barcode-scanner-simple] bereits installiert — clone übersprungen")
     else:
-        url = gitops.REPO_URLS["barcode-simple"]
-        log(f"[barcode-simple] klone {url} …")
-        gitops.clone("barcode-simple", url)
-        log("[barcode-simple] clone ok")
+        url = gitops.REPO_URLS["barcode-scanner-simple"]
+        log(f"[barcode-scanner-simple] klone {url} …")
+        gitops.clone("barcode-scanner-simple", url)
+        log("[barcode-scanner-simple] clone ok")
 
     # 2. Portables Node sicherstellen (Barcode braucht node+npm).
-    log("[barcode-simple] Node.js prüfen …")
+    log("[barcode-scanner-simple] Node.js prüfen …")
     log(prereqs.ensure_node(log))
 
     # 3. npm install im server/ (Server-Abhängigkeiten: ws, selfsigned, qrcode).
-    log("[barcode-simple] npm install (server) …")
+    log("[barcode-scanner-simple] npm install (server) …")
     env = prereqs.node_env()
     npm = prereqs.npm_bin()
     # List form ohne shell=True: npm_bin() liefert auf Windows den vollen Pfad
@@ -165,7 +165,7 @@ def install(log: LogFn) -> None:
     # 4. Client-Venv (pyautogui, pynput, websocket-client isoliert).
     _ensure_client_venv(log)
 
-    log("[barcode-simple] Installation fertig.")
+    log("[barcode-scanner-simple] Installation fertig.")
 
 
 def update(log: LogFn) -> gitops.RepoStatus:
@@ -174,14 +174,14 @@ def update(log: LogFn) -> gitops.RepoStatus:
     Liefert den Vorher-Status (inkl. ``dirty``), damit die GUI warnen kann,
     falls ``pull --ff-only`` wegen lokaler Änderungen scheitert.
     """
-    pre = gitops.status("barcode-simple")
+    pre = gitops.status("barcode-scanner-simple")
     if not pre.installed:
-        raise FileNotFoundError("barcode-simple nicht installiert — erst install()")
+        raise FileNotFoundError("barcode-scanner-simple nicht installiert — erst install()")
     if pre.dirty:
-        log("[barcode-simple] WARNUNG: lokale Änderungen — pull --ff-only könnte scheitern")
+        log("[barcode-scanner-simple] WARNUNG: lokale Änderungen — pull --ff-only könnte scheitern")
 
-    log("[barcode-simple] git pull --ff-only …")
-    out = gitops.pull("barcode-simple")
+    log("[barcode-scanner-simple] git pull --ff-only …")
+    out = gitops.pull("barcode-scanner-simple")
     if out:
         log(out)
 
@@ -189,7 +189,7 @@ def update(log: LogFn) -> gitops.RepoStatus:
     log(prereqs.ensure_node(log))
     env = prereqs.node_env()
     npm = prereqs.npm_bin()
-    log("[barcode-simple] npm install (server) …")
+    log("[barcode-scanner-simple] npm install (server) …")
     rc = run_streaming([npm, "install"], log=log, cwd=server_dir(), env=env)
     if rc != 0:
         raise RuntimeError(f"npm install fehlgeschlagen (Exit {rc})")
@@ -210,12 +210,12 @@ def _ensure_client_venv(log: LogFn) -> None:
     venv_python = client_venv_python()
     venv_dir = barcode_root() / CLIENT_VENV_DIR
     if not venv_python.is_file():
-        log("[barcode-simple] uv venv (client) …")
+        log("[barcode-scanner-simple] uv venv (client) …")
         rc = run_streaming(["uv", "venv", str(venv_dir)], log=log, cwd=barcode_root())
         if rc != 0:
             raise RuntimeError(f"uv venv fehlgeschlagen (Exit {rc})")
     req = barcode_root() / CLIENT_REQUIREMENTS
-    log(f"[barcode-simple] uv pip install -r {CLIENT_REQUIREMENTS} …")
+    log(f"[barcode-scanner-simple] uv pip install -r {CLIENT_REQUIREMENTS} …")
     rc = run_streaming(
         ["uv", "pip", "install", "--python", str(venv_python), "-r", str(req)],
         log=log,
@@ -231,15 +231,15 @@ def _ensure_client_venv(log: LogFn) -> None:
 def start(server_mgr: SubprocessManager, client_mgr: SubprocessManager, log: LogFn) -> None:
     """Startet Server (node) und danach den Client (python) — zwei Subprozesse.
 
-    Reihenfolge (wie ``barcode-simple/start.bat``): alte ``session.json``
+    Reihenfolge (wie ``barcode-scanner-simple/start.bat``): alte ``session.json``
     löschen → Server starten → auf ``session.json`` warten → Client starten.
     Der Client braucht die session.json (enthält ``desktopToken`` + certPath).
 
     Diese Funktion blockiert bis zu :data:`SESSION_TIMEOUT_S` s (Warten auf
     session.json) — die GUI ruft sie daher in einem Hintergrund-Thread auf.
     """
-    if not paths.exists("barcode-simple"):
-        raise FileNotFoundError("barcode-simple nicht installiert — erst install()")
+    if not paths.exists("barcode-scanner-simple"):
+        raise FileNotFoundError("barcode-scanner-simple nicht installiert — erst install()")
 
     node = prereqs.node_bin()
     if not node:
@@ -255,12 +255,12 @@ def start(server_mgr: SubprocessManager, client_mgr: SubprocessManager, log: Log
     sf = session_file()
     if sf.is_file():
         sf.unlink()
-        log("[barcode-simple] alte session.json entfernt")
+        log("[barcode-scanner-simple] alte session.json entfernt")
 
     # 2. Server starten. cwd = Repo-Root (wie start.bat: ``node server\server.js``);
     #    server.js löst seine Pfade über __dirname, cwd spielt keine Rolle.
     env = prereqs.node_env()
-    log("[barcode-simple] starte Server (node server/server.js) …")
+    log("[barcode-scanner-simple] starte Server (node server/server.js) …")
     server_mgr.start([node, str(SERVER_SCRIPT)], cwd=barcode_root(), env=env)
 
     # 3. Auf session.json warten (Server schreibt sie beim listen).
@@ -270,10 +270,10 @@ def start(server_mgr: SubprocessManager, client_mgr: SubprocessManager, log: Log
             f"session.json wurde nach {SESSION_TIMEOUT_S:.0f}s nicht erzeugt "
             "— Server nicht hochgekommen? Siehe Log."
         )
-    log(f"[barcode-simple] session.json da: {sf}")
+    log(f"[barcode-scanner-simple] session.json da: {sf}")
 
     # 4. Client starten. --session-file als absoluter Pfad (client.py nimmt Path).
-    log("[barcode-simple] starte Client (python client/client.py) …")
+    log("[barcode-scanner-simple] starte Client (python client/client.py) …")
     try:
         client_mgr.start(
             [str(venv_python), str(CLIENT_SCRIPT), "--session-file", str(sf)],
@@ -312,5 +312,5 @@ def stop(
     if sf.is_file():
         sf.unlink()
         if log is not None:
-            log("[barcode-simple] session.json aufgeräumt")
+            log("[barcode-scanner-simple] session.json aufgeräumt")
     return {"client": client_code, "server": server_code}
